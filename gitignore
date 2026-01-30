@@ -1,0 +1,23 @@
+# C++ objects and libs
+*.o
+*.a
+*.lib
+*.so
+*.dylib
+*.dll
+
+# Qt Temporary Files
+moc_*.cpp
+ui_*.h
+qrc_*.cpp
+Makefile*
+*build-*
+*.pro.user
+*.pro.user.*
+
+# Mac System Files
+.DS_Store
+
+# Executables
+*.app
+*.exe
