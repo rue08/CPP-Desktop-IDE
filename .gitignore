@@ -21,3 +21,10 @@ Makefile*
 # Executables
 *.app
 *.exe
+
+# API Header File
+config.h
+
+
+.qtcreator/
+build/
