@@ -24,25 +24,6 @@ void Storage::setPendingTasks(const int& pendingTasks)
 }
 
 
-// void Storage::setCloudFileData(const QByteArray& fileData, const QString& filePath)
-// {
-//     QString remotePath = QString("users/%1/%2").arg(m_uid, QFileInfo(filePath).fileName());
-//     QString encodedPath = QUrl::toPercentEncoding(remotePath);
-//     QString uploadFileEndpoint = "https://firebasestorage.googleapis.com/v0/b/" + m_firebaseBucket + "/o?uploadType=media&name=" + encodedPath;
-
-//     newRequest = QNetworkRequest{QUrl(uploadFileEndpoint)};
-//     newRequest.setRawHeader("Authorization", ("Bearer " + m_idToken).toUtf8());
-//     newRequest.setHeader(QNetworkRequest::ContentTypeHeader, QString("application/octet-stream"));
-
-//     QNetworkReply* reply = m_networkAccessManager -> post(newRequest, fileData);
-
-//     connect(reply, &QNetworkReply::finished, this, [this, filePath]() {
-//         // This code runs ONLY when the reply is finished
-//         this -> networkReplyReadyRead(filePath);
-//     });
-// }
-
-
 void Storage::uploadFile(const QByteArray& fileData, const QString& localFilePath)
 {
     QString remotePath = QString("users/%1/%2").arg(m_uid, QFileInfo(localFilePath).fileName());
