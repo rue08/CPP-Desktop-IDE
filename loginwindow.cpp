@@ -14,7 +14,6 @@ LoginWindow::LoginWindow(MainWindow *mainWindow, QWidget *parent)
     ui->setupUi(this);
 
     auth = new Authenticator(this);
-    auth -> setAPIKey("***REMOVED***");
 
     connect(auth, &Authenticator::loginFailed, this, &LoginWindow::onLoginFailed);
     connect(auth, &Authenticator::loginSucceeded, this, &LoginWindow::onLoginSucceeded);

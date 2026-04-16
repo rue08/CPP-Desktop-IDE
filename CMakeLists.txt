@@ -32,6 +32,7 @@ if(${QT_VERSION_MAJOR} GREATER_EQUAL 6)
         loginwindow.h loginwindow.cpp loginwindow.ui
         authenticator.h authenticator.cpp
         storage.h storage.cpp
+        config.h
 
 
     )

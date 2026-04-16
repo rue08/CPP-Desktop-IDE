@@ -1,4 +1,5 @@
 #include "authenticator.h"
+#include "config.h"
 
 Authenticator::Authenticator(QObject *parent)
     : QObject(parent)
@@ -9,7 +10,7 @@ Authenticator::Authenticator(QObject *parent)
 
 void Authenticator::setAPIKey(const QString &key)
 {
-    m_APIKey = key;
+    m_APIKey = FIREBASE_API_KEY;
 }
 
 void Authenticator::networkReplyReadyRead()
