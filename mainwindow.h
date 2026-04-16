@@ -9,7 +9,9 @@
 #include <QVariant>
 #include <QPlainTextEdit>
 #include <QFileDialog>
+#include <QStackedWidget>
 #include "storage.h"
+#include "loginwindow.h"
 
 QT_BEGIN_NAMESPACE
 namespace Ui {
@@ -26,11 +28,6 @@ public:
     ~MainWindow();
     QTabWidget *theWorkspace;
     QPlainTextEdit* curr;
-    QString idToken;
-    QString uid;
-
-public slots:
-    void enableActionUpload(bool flag);
 
 private slots:
     void closeTab(int index);
@@ -55,8 +52,6 @@ private slots:
 
     void on_actionSave_triggered();
 
-    // void on_actionSave_As_triggered();
-
     void on_actionClose_File_triggered();
 
     void localFilesItemClicked(QTreeWidgetItem* item);
@@ -73,13 +68,16 @@ private slots:
 
     void onDownloadFile(const QByteArray &response);
 
+    void onEnableActionUpload(bool flag, const QString& idToken, const QString& uid);
+
     void on_actionClose_Folder_triggered();
 
 private:
     Ui::MainWindow *ui;
+    QStackedWidget *localFilesStack;
+    QStackedWidget *cloudFilesStack;
     QTreeWidget *localFiles;
     QTreeWidget *cloudFiles;
-    // QTabWidget *theWorkspace;
     QSplitter *splitter;
     QSplitter* theVault;
     QSettings settings;
@@ -88,7 +86,9 @@ private:
     QTabBar tabBar;
     QFileInfo info;
     Storage *storage;
-    // QPlainTextEdit* curr;
+    LoginWindow *loginWindow;
+    QLabel* localFilesArea;
+    QLabel* cloudFilesArea;
 
 protected:
     void closeEvent(QCloseEvent *event) override;

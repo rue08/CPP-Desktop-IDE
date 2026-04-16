@@ -11,13 +11,13 @@ LoginWindow::LoginWindow(MainWindow *mainWindow, QWidget *parent)
     , ui(new Ui::LoginWindow)
     , m_window(mainWindow)
 {
+    ui->setupUi(this);
+
     auth = new Authenticator(this);
     auth -> setAPIKey("***REMOVED***");
 
     connect(auth, &Authenticator::loginFailed, this, &LoginWindow::onLoginFailed);
     connect(auth, &Authenticator::loginSucceeded, this, &LoginWindow::onLoginSucceeded);
-
-    ui->setupUi(this);
 }
 
 LoginWindow::~LoginWindow()
@@ -36,9 +36,7 @@ void LoginWindow::on_loginButton_clicked()
 void LoginWindow::onLoginSucceeded(const QString &idToken, const QString &uid)
 {
     m_window -> statusBar() -> showMessage("Successfully logged in.", 2000);
-    m_window -> idToken = idToken;
-    m_window -> uid = uid;
-    m_window -> enableActionUpload(true);
+    emit enableActionUpload(true, idToken, uid);
     close();
 }
 
@@ -48,10 +46,6 @@ void LoginWindow::on_signUpButton_clicked()
     QString password = ui -> lineEdit_password -> text();
 
     auth -> signUserUp(email, password);
-
-    m_window -> statusBar() -> showMessage("Successfully logged in.", 2000);
-
-    close();
 }
 
 void LoginWindow::onLoginFailed()

@@ -14,9 +14,12 @@ void Authenticator::setAPIKey(const QString &key)
 
 void Authenticator::networkReplyReadyRead()
 {
-    QByteArray response = m_networkReply -> readAll();
+    QNetworkReply* reply = qobject_cast<QNetworkReply*>(sender());
 
+    QByteArray response = reply -> readAll();
     parseResponse(response);
+
+    reply -> deleteLater();
 }
 
 void Authenticator::signUserUp(const QString &email, const QString &password)
@@ -52,9 +55,9 @@ void Authenticator::performPOST(const QString &url, const QJsonDocument &payload
     QNetworkRequest newRequest{QUrl(url)};
     newRequest.setHeader(QNetworkRequest::ContentTypeHeader, QString("application/json"));
 
-    m_networkReply = m_networkAccessManager -> post(newRequest, payload.toJson());
+    QNetworkReply* reply = m_networkAccessManager -> post(newRequest, payload.toJson());
 
-    connect(m_networkReply, &QNetworkReply::readyRead, this, &Authenticator::networkReplyReadyRead);
+    connect(reply, &QNetworkReply::finished, this, &Authenticator::networkReplyReadyRead);
 }
 
 void Authenticator::parseResponse(const QByteArray &response)

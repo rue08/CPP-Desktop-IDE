@@ -28,6 +28,9 @@ private:
     MainWindow *m_window;
     Ui::LoginWindow *ui;
     Authenticator *auth;
+
+signals:
+    void enableActionUpload(bool flag, const QString &idToken, const QString &uid);
 };
 
 #endif // LOGINWINDOW_H

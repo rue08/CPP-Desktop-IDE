@@ -24,7 +24,6 @@ public:
 
 private:
     QNetworkAccessManager *m_networkAccessManager;
-    QNetworkReply *m_networkReply;
     QString m_APIKey;
 
 
