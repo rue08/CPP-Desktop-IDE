@@ -483,8 +483,11 @@ void MainWindow::on_actionUpload_triggered()
             storage -> setPendingTasks(ls.size());
         }
 
-        if (curr)
-            storage -> uploadFile(curr -> toPlainText().toUtf8(), ls[i] -> data(0, Qt::UserRole).toString());
+        filePath = ls[i] -> data(0, Qt::UserRole).toString();
+        QFile openFile(filePath);
+        openFile.open(QIODevice::ReadOnly | QIODevice::Text);
+
+        storage -> uploadFile(openFile.readAll(), ls[i] -> data(0, Qt::UserRole).toString());
     }
 }
 

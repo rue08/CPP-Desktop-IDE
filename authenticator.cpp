@@ -6,10 +6,7 @@ Authenticator::Authenticator(QObject *parent)
     , m_APIKey(QString())
 {
     m_networkAccessManager = new QNetworkAccessManager(this);
-}
 
-void Authenticator::setAPIKey(const QString &key)
-{
     m_APIKey = FIREBASE_API_KEY;
 }
 
