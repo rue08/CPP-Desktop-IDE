@@ -2,12 +2,12 @@
 #include "./ui_mainwindow.h"
 #include "syntaxhighlighter.h"
 #include "terminal.h"
-#include "loginwindow.h"
 #include <QCloseEvent>
 #include <QMessageBox>
 #include <QPushButton>
 #include <QDir>
 #include <QDirIterator>
+#include <QStackedWidget>
 
 
 MainWindow::MainWindow(QWidget *parent)
@@ -19,13 +19,21 @@ MainWindow::MainWindow(QWidget *parent)
     projectFolderPath = QStringLiteral(PROJECT_ROOT_DIR);
 
     storage = new Storage(this);
+    loginWindow = new LoginWindow(this, this);
 
     splitter = new QSplitter(Qt::Horizontal);
     setCentralWidget(splitter);
 
     theVault = new QSplitter(Qt::Vertical, splitter);
-    localFiles = new QTreeWidget(theVault);
-    cloudFiles = new QTreeWidget(theVault);
+
+    localFilesStack = new QStackedWidget(theVault);
+    cloudFilesStack = new QStackedWidget(theVault);
+
+    localFiles = new QTreeWidget;
+    localFilesStack->addWidget(localFiles);
+
+    cloudFiles = new QTreeWidget;
+    cloudFilesStack->addWidget(cloudFiles);
 
     theWorkspace = new QTabWidget(splitter);
 
@@ -53,10 +61,29 @@ MainWindow::MainWindow(QWidget *parent)
     cloudFiles -> setHeaderHidden(true);
     cloudFiles -> setColumnCount(1);
 
+
+    localFilesArea = new QLabel("Local Files' Area");
+    localFilesStack -> addWidget(localFilesArea);
+    localFilesArea->setAlignment(Qt::AlignCenter);
+    localFilesArea->setWordWrap(true);
+    localFilesArea->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+    localFilesArea->setStyleSheet("color: rgba(255,255,255,140);");
+
+    cloudFilesArea = new QLabel("Cloud Files' Area");
+    cloudFilesStack -> addWidget(cloudFilesArea);
+    cloudFilesArea->setAlignment(Qt::AlignCenter);
+    cloudFilesArea->setWordWrap(true);
+    cloudFilesArea->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+    cloudFilesArea->setStyleSheet("color: rgba(255,255,255,140);");
+
+    localFilesStack -> setCurrentWidget(localFilesArea);
+    cloudFilesStack -> setCurrentWidget(cloudFilesArea);
+
     connect(localFiles, &QTreeWidget::itemDoubleClicked, this, &MainWindow::localFilesItemClicked);
     connect(cloudFiles, &QTreeWidget::itemDoubleClicked, this, &MainWindow::cloudFilesItemClicked);
     connect(storage, &Storage::setCloudFiles, this, &MainWindow::onSetCloudFiles);
     connect(storage, &Storage::setDownloadFile, this, &MainWindow::onDownloadFile);
+    connect(loginWindow, &LoginWindow::enableActionUpload, this, &MainWindow::onEnableActionUpload);
 
     if (!settings.contains("splitterDimensions"))
         splitter -> setSizes({100, 100});
@@ -114,9 +141,13 @@ void MainWindow::closeTab(int index)
         msgBox.setText("Choose whether to upload or save the document.");
         msgBox.exec();
 
-        if (msgBox.clickedButton()->text() == uploadButton->text())
-            on_actionUpload_triggered();
-        else if (msgBox.clickedButton()->text() == saveButton->text())
+        if (msgBox.clickedButton() -> text() == uploadButton->text())
+        {
+            int temp = 1;
+            storage -> setPendingTasks(temp);
+            storage -> uploadFile(curr -> toPlainText().toUtf8(), filePath);
+        }
+        else if (msgBox.clickedButton() -> text() == saveButton->text())
             on_actionSave_triggered();
         else if (msgBox.clickedButton()->text() == closeButton->text())
             theWorkspace -> removeTab(index);
@@ -152,17 +183,17 @@ void MainWindow::closeTab(int index)
 
     msgBox.setInformativeText("Do you want to save your changes?");
 
-    QMessageBox::StandardButton reply = msgBox.exec();
+    int reply = msgBox.exec();
 
-    if (reply== QMessageBox::Discard)
+    if (reply == 0x00800000)
     {
         theWorkspace->removeTab(index);
         delete curr;
         return;
     }
-    else if (reply == QMessageBox::Cancel)
+    else if (reply == 0x00400000)
         return;
-    else if (reply == QMessageBox::Save)
+    else if (reply == 0x00000800)
     {
         on_actionSave_triggered();
         if (!filePath.isEmpty())
@@ -225,6 +256,8 @@ void MainWindow::on_actionOpen_Folder_triggered()
     if (folderPath.isEmpty())
         return;
 
+    localFilesStack -> setCurrentWidget(localFiles);
+
     dir = QDir(folderPath);
 
     QTreeWidgetItem* root = new QTreeWidgetItem(localFiles);
@@ -257,7 +290,7 @@ void MainWindow::on_actionSave_triggered()
 
     curr = qobject_cast<QPlainTextEdit*>(theWorkspace -> currentWidget());
 
-    if (curr->toPlainText().isEmpty())
+    if (curr -> toPlainText().isEmpty())
     {
         QMessageBox msgBox;
         msgBox.setIcon(QMessageBox::Information);
@@ -303,12 +336,6 @@ void MainWindow::on_actionSave_triggered()
 }
 
 
-// void MainWindow::on_actionSave_As_triggered()
-// {
-
-// }
-
-
 void MainWindow::on_actionUndo_triggered()
 {
     if (theWorkspace -> currentIndex() != -1)
@@ -352,32 +379,19 @@ void MainWindow::on_actionClose_File_triggered()
         this -> close();
 }
 
-void MainWindow::cloudFilesItemClicked(QTreeWidgetItem *item)
-{
-    theWorkspace -> addTab(new QPlainTextEdit(), item->text(0));
-    theWorkspace -> setCurrentIndex(theWorkspace -> count() - 1);
-
-    filePath = item -> data(0, Qt::UserRole).toString();
-
-    curr = qobject_cast<QPlainTextEdit*>(theWorkspace -> currentWidget());
-    curr -> setProperty("filePath", QVariant(filePath));
-
-    storage -> downloadFile(filePath);
-}
-
 
 void MainWindow::on_actionLogin_triggered()
 {
-    LoginWindow* loginWindow = new LoginWindow(this, this);
     loginWindow -> setModal(true);
     loginWindow -> exec();
 }
 
-void MainWindow::enableActionUpload(bool flag)
+void MainWindow::onEnableActionUpload(bool flag, const QString& idToken, const QString& uid)
 {
     ui -> actionUpload -> setEnabled(flag);
     storage -> setIdToken(idToken);
     storage -> setUid(uid);
+    cloudFiles -> clear();
     storage -> listFiles();
 }
 
@@ -448,25 +462,53 @@ void MainWindow::on_actionUpload_triggered()
         return;
     if (curr && ls.size() == 0)
     {
+        cloudFiles->clear();
+        if (curr -> property("filePath").toString().contains("users", Qt::CaseSensitive))
+        {
+            int temp = 1;
+            storage -> setPendingTasks(temp);
+            storage -> uploadFile(curr -> toPlainText().toUtf8(), curr -> property("filePath").toString());
+            return;
+        }
         on_actionSave_triggered();
-        storage -> setLocalFilePath(curr -> property("filePath").toString());
-        storage -> uploadFile();
+        storage -> uploadFile(curr -> toPlainText().toUtf8(), curr -> property("filePath").toString());
         return;
     }
 
     for (int i = 0; i < ls.size(); i++)
     {
-        storage -> setLocalFilePath(ls[i] -> data(0, Qt::UserRole).toString());
-        storage -> uploadFile();
+        if (i == 0)
+        {
+            cloudFiles->clear();
+            storage -> setPendingTasks(ls.size());
+        }
+
+        if (curr)
+            storage -> uploadFile(curr -> toPlainText().toUtf8(), ls[i] -> data(0, Qt::UserRole).toString());
     }
 }
 
 void MainWindow::onSetCloudFiles(const QString &fileName, const QString &cloudFilePath)
 {
+    cloudFilesStack -> setCurrentWidget(cloudFiles);
+
     QTreeWidgetItem* child = new QTreeWidgetItem(cloudFiles);
     child -> setText(0, fileName);
     child -> setIcon(0, QIcon(":/icons/Icons/icons8-c++.svg"));
     child -> setData(0, Qt::UserRole, cloudFilePath);
+}
+
+void MainWindow::cloudFilesItemClicked(QTreeWidgetItem *item)
+{
+    theWorkspace -> addTab(new QPlainTextEdit(), item->text(0));
+    theWorkspace -> setCurrentIndex(theWorkspace -> count() - 1);
+
+    filePath = item -> data(0, Qt::UserRole).toString();
+
+    curr = qobject_cast<QPlainTextEdit*>(theWorkspace -> currentWidget());
+    curr -> setProperty("filePath", QVariant(filePath));
+
+    storage -> downloadFile(filePath);
 }
 
 void MainWindow::onDownloadFile(const QByteArray &response)
@@ -489,5 +531,8 @@ void MainWindow::on_actionClose_Folder_triggered()
         if (ls[i] -> data(0, Qt::UserRole).toString() == "")
             delete ls[i];
     }
+
+    if (localFiles -> topLevelItemCount() == 0)
+        localFilesStack -> setCurrentWidget(localFilesArea);
 }
 
