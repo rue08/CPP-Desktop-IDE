@@ -531,8 +531,21 @@ void MainWindow::onListFilesFailed(const QString &errorString)
 }
 
 
-void MainWindow::onDownloadFailed(const QString &errorString)
+void MainWindow::onDownloadFailed(const QString &errorString, QObject *targetTab)
 {
+    // The tab opened for this download is now permanently empty and useless
+    // -- close it instead of leaving a dead placeholder tab behind. It may
+    // already be gone (user closed it while the download was in flight), in
+    // which case targetTab is null and there's nothing to clean up.
+    QPlainTextEdit *tab = qobject_cast<QPlainTextEdit*>(targetTab);
+    if (tab)
+    {
+        int index = theWorkspace -> indexOf(tab);
+        if (index != -1)
+            theWorkspace -> removeTab(index);
+        delete tab;
+    }
+
     QMessageBox::warning(this, "Download Failed", "Could not download the file:\n" + errorString);
 }
 
@@ -546,18 +559,24 @@ void MainWindow::cloudFilesItemClicked(QTreeWidgetItem *item)
     curr = qobject_cast<QPlainTextEdit*>(theWorkspace -> currentWidget());
     curr -> setProperty("filePath", QVariant(filePath));
 
-    storage -> downloadFile(filePath);
+    // Pass this exact tab through, rather than relying on "whichever tab is
+    // active" when the (asynchronous) download eventually completes -- the
+    // user may have switched to a different tab by then.
+    storage -> downloadFile(filePath, curr);
 }
 
-void MainWindow::onDownloadFile(const QByteArray &response)
+void MainWindow::onDownloadFile(const QByteArray &response, QObject *targetTab)
 {
-    curr = qobject_cast<QPlainTextEdit*>(theWorkspace -> currentWidget());
-    curr -> setPlainText(response);
+    QPlainTextEdit *tab = qobject_cast<QPlainTextEdit*>(targetTab);
+    if (!tab)
+        return; // the tab this download was for has since been closed
 
-    QFontMetricsF fontMetrics(curr->font());
-    curr->setTabStopDistance(fontMetrics.horizontalAdvance(' ') * 4);
+    tab -> setPlainText(response);
 
-    new SyntaxHighlighter(curr -> document());
+    QFontMetricsF fontMetrics(tab->font());
+    tab->setTabStopDistance(fontMetrics.horizontalAdvance(' ') * 4);
+
+    new SyntaxHighlighter(tab -> document());
 }
 
 

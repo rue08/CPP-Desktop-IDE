@@ -181,7 +181,7 @@ void Storage::parseResponse(const QByteArray &response)
 }
 
 
-void Storage::downloadFile(const QString &cloudFilePath)
+void Storage::downloadFile(const QString &cloudFilePath, QObject *targetTab)
 {
     QString downloadFileEndpoint = "https://firebasestorage.googleapis.com/v0/b/" + m_firebaseBucket + "/o/" + QString(QUrl::toPercentEncoding(cloudFilePath)) + "?alt=media";
     newRequest = QNetworkRequest{QUrl(downloadFileEndpoint)};
@@ -189,20 +189,26 @@ void Storage::downloadFile(const QString &cloudFilePath)
 
     QNetworkReply* reply = m_networkAccessManager -> get(newRequest);
 
-    connect(reply, &QNetworkReply::finished, this, &Storage::onDownloadFinished);
+    // Track targetTab via QPointer, not a raw pointer: if the caller's widget
+    // is destroyed before this download finishes (tab closed, app torn down
+    // mid-download), the pointer safely resolves to null instead of dangling.
+    QPointer<QObject> trackedTarget(targetTab);
+    connect(reply, &QNetworkReply::finished, this, [this, trackedTarget]() {
+        this -> onDownloadFinished(trackedTarget);
+    });
 }
 
 
-void Storage::onDownloadFinished()
+void Storage::onDownloadFinished(QPointer<QObject> targetTab)
 {
     QNetworkReply* reply = qobject_cast<QNetworkReply*>(sender());
     QByteArray response = reply -> readAll();
 
     QString error = extractError(reply, response);
     if (!error.isEmpty())
-        emit downloadFailed(error);
+        emit downloadFailed(error, targetTab.data());
     else
-        emit setDownloadFile(response);
+        emit setDownloadFile(response, targetTab.data());
 
     reply->deleteLater();
 }

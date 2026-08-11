@@ -67,7 +67,7 @@ private slots:
 
     void onSetCloudFiles(const QString &fileName, const QString &cloudFilePath);
 
-    void onDownloadFile(const QByteArray &response);
+    void onDownloadFile(const QByteArray &response, QObject *targetTab);
 
     void onEnableActionUpload(bool flag, const QString& idToken, const QString& uid);
 
@@ -76,7 +76,7 @@ private slots:
     void onUploadSucceeded(const QString &localFilePath, const QString &cloudFilePath);
     void onUploadFailed(const QString &localFilePath, const QString &errorString);
     void onListFilesFailed(const QString &errorString);
-    void onDownloadFailed(const QString &errorString);
+    void onDownloadFailed(const QString &errorString, QObject *targetTab);
 
 private:
     Ui::MainWindow *ui;

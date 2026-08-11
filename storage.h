@@ -9,6 +9,7 @@
 #include <QJsonObject>
 #include <QJsonArray>
 #include <QVariant>
+#include <QPointer>
 
 class MainWindow;
 
@@ -20,7 +21,14 @@ public:
 
     void setUid(const QString &uid);
     void setIdToken(const QString &idToken);
-    void downloadFile(const QString &cloudFilePath);
+
+    // `targetTab` is opaque to Storage -- it's just echoed back on
+    // setDownloadFile()/downloadFailed() so the caller can tell which of its
+    // own widgets this particular download was for, even if several are in
+    // flight at once or the UI has moved on by the time the reply arrives.
+    // If targetTab is destroyed before the download finishes, it comes back
+    // as nullptr instead of a dangling pointer.
+    void downloadFile(const QString &cloudFilePath, QObject *targetTab);
     void listFiles();
 
     // Queues a single file for upload. Safe to call repeatedly in a loop for
@@ -41,7 +49,7 @@ private:
 
     void onUploadFinished(const QString &localFilePath);
     void onListFilesFinished();
-    void onDownloadFinished();
+    void onDownloadFinished(QPointer<QObject> targetTab);
 
     void parseResponse(const QByteArray &response);
     void writeFirestoreMetadata(const QString &cloudFilePath, const QString &localFilePath);
@@ -59,12 +67,12 @@ signals:
     // its view without every caller having to remember to do it themselves.
     void cloudFilesCleared();
     void setCloudFiles(const QString &fileName, const QString &cloudFilePath);
-    void setDownloadFile(const QByteArray &response);
+    void setDownloadFile(const QByteArray &response, QObject *targetTab);
 
     void uploadSucceeded(const QString &localFilePath, const QString &cloudFilePath);
     void uploadFailed(const QString &localFilePath, const QString &errorString);
     void listFilesFailed(const QString &errorString);
-    void downloadFailed(const QString &errorString);
+    void downloadFailed(const QString &errorString, QObject *targetTab);
 };
 
 #endif // STORAGE_H
