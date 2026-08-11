@@ -10,6 +10,7 @@
 #include <QPlainTextEdit>
 #include <QFileDialog>
 #include <QStackedWidget>
+#include <QSet>
 #include "storage.h"
 #include "loginwindow.h"
 
@@ -72,6 +73,11 @@ private slots:
 
     void on_actionClose_Folder_triggered();
 
+    void onUploadSucceeded(const QString &localFilePath, const QString &cloudFilePath);
+    void onUploadFailed(const QString &localFilePath, const QString &errorString);
+    void onListFilesFailed(const QString &errorString);
+    void onDownloadFailed(const QString &errorString);
+
 private:
     Ui::MainWindow *ui;
     QStackedWidget *localFilesStack;
@@ -89,6 +95,10 @@ private:
     LoginWindow *loginWindow;
     QLabel* localFilesArea;
     QLabel* cloudFilesArea;
+
+    // Cloud paths whose upload just succeeded and are waiting for the next
+    // onSetCloudFiles() pass to be shown with a success icon.
+    QSet<QString> recentlyUploadedCloudPaths;
 
 protected:
     void closeEvent(QCloseEvent *event) override;

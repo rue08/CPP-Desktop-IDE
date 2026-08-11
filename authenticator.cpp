@@ -61,14 +61,19 @@ void Authenticator::performPOST(const QString &url, const QJsonDocument &payload
 void Authenticator::parseResponse(const QByteArray &response)
 {
     QJsonDocument jsonDocument = QJsonDocument::fromJson(response);
+    QJsonObject object = jsonDocument.object();
 
-    if (jsonDocument.object().contains("error"))
-        emit loginFailed();
-    else
+    // A transport failure (offline, timeout, DNS) can leave `response` empty
+    // or non-JSON, which used to fall through and emit loginSucceeded with
+    // blank credentials. Require a real idToken before treating this as success.
+    if (!jsonDocument.isObject() || object.contains("error") || !object.contains("idToken"))
     {
-        QString idToken = jsonDocument.object().value("idToken").toString();
-        QString uid = jsonDocument.object().value("localId").toString();
-
-        emit loginSucceeded(idToken, uid);
+        emit loginFailed();
+        return;
     }
+
+    QString idToken = object.value("idToken").toString();
+    QString uid = object.value("localId").toString();
+
+    emit loginSucceeded(idToken, uid);
 }

@@ -1,5 +1,6 @@
 #include "storage.h"
 #include <QFileInfo>
+#include <QUrl>
 
 Storage::Storage(QObject *parent)
     : QObject{parent}
@@ -18,14 +19,30 @@ void Storage::setIdToken(const QString &idToken)
 }
 
 
-void Storage::setPendingTasks(const int& pendingTasks)
+QString Storage::extractError(QNetworkReply *reply, const QByteArray &response)
 {
-    m_pendingTasks = pendingTasks;
+    // Firebase's REST APIs return a JSON body shaped like
+    // {"error": {"code": ..., "message": ..., "status": ...}} on failure.
+    // Prefer that message when present since it's far more specific than
+    // Qt's generic transport-level error.
+    QJsonDocument jsonDocument = QJsonDocument::fromJson(response);
+    if (jsonDocument.isObject() && jsonDocument.object().contains("error"))
+    {
+        QString message = jsonDocument.object().value("error").toObject().value("message").toString();
+        return message.isEmpty() ? QStringLiteral("The server returned an error.") : message;
+    }
+
+    if (reply->error() != QNetworkReply::NoError)
+        return reply->errorString();
+
+    return QString();
 }
 
 
 void Storage::uploadFile(const QByteArray& fileData, const QString& localFilePath)
 {
+    m_pendingUploads++;
+
     QString remotePath = QString("users/%1/%2").arg(m_uid, QFileInfo(localFilePath).fileName());
     QString encodedPath = QUrl::toPercentEncoding(remotePath);
     QString uploadFileEndpoint = "https://firebasestorage.googleapis.com/v0/b/" + m_firebaseBucket + "/o?uploadType=media&name=" + encodedPath;
@@ -37,22 +54,29 @@ void Storage::uploadFile(const QByteArray& fileData, const QString& localFilePat
     QNetworkReply* reply = m_networkAccessManager -> post(newRequest, fileData);
 
     connect(reply, &QNetworkReply::finished, this, [this, localFilePath]() {
-        // This code runs ONLY when the reply is finished
-        this -> networkReplyReadyRead(localFilePath);
+        this -> onUploadFinished(localFilePath);
     });
 }
 
 
-void Storage::networkReplyReadyRead(const QString& localFilePath)
+void Storage::onUploadFinished(const QString& localFilePath)
 {
     QNetworkReply *reply = qobject_cast<QNetworkReply*>(sender());
-
     QByteArray response = reply -> readAll();
+
+    QString error = extractError(reply, response);
+    if (!error.isEmpty())
+    {
+        emit uploadFailed(localFilePath, error);
+        reply->deleteLater();
+        finishPendingUpload();
+        return;
+    }
+
     QJsonDocument jsonDocument = QJsonDocument::fromJson(response);
-    QJsonObject jsonObject = jsonDocument.object();
 
     // Firebase returns the full path in the "name" field on success
-    QString cloudFilePath = jsonObject.value("name").toString();
+    QString cloudFilePath = jsonDocument.object().value("name").toString();
 
     writeFirestoreMetadata(cloudFilePath, localFilePath);
 
@@ -83,36 +107,56 @@ void Storage::writeFirestoreMetadata(const QString &cloudFilePath, const QString
 
     QNetworkReply* reply = m_networkAccessManager -> sendCustomRequest(newRequest, "PATCH", jsonPayload.toJson());
 
-    connect(reply, &QNetworkReply::finished, this, [this, reply]() {
-        m_pendingTasks--;
+    connect(reply, &QNetworkReply::finished, this, [this, reply, localFilePath, cloudFilePath]() {
+        QByteArray response = reply -> readAll();
+        QString error = extractError(reply, response);
 
-        // ONLY list files when the last one is done
-        if (m_pendingTasks <= 0)
-            this -> listFiles();
+        if (error.isEmpty())
+            emit uploadSucceeded(localFilePath, cloudFilePath);
+        else
+            emit uploadFailed(localFilePath, error);
+
+        // Always settle the batch counter, whether this upload succeeded or not.
+        finishPendingUpload();
 
         reply->deleteLater();
     });
 }
 
 
+void Storage::finishPendingUpload()
+{
+    // Refresh the list once every upload in the current batch has finished
+    // (successfully or not) -- never before, and never left hanging.
+    if (--m_pendingUploads <= 0)
+        listFiles();
+}
+
+
 void Storage::listFiles()
 {
+    emit cloudFilesCleared();
+
     QString listFilesEndpoint = "https://firestore.googleapis.com/v1/projects/mehul-s-ide/databases/(default)/documents/Users/" + m_uid + "/Files";
     QNetworkRequest request{QUrl(listFilesEndpoint)};
     request.setRawHeader("Authorization", ("Bearer " + m_idToken).toUtf8());
     request.setHeader(QNetworkRequest::ContentTypeHeader, QString("application/json"));
 
     QNetworkReply *reply = m_networkAccessManager -> get(request);
-    connect(reply, &QNetworkReply::finished, this, &Storage::networkReplyFile);
+    connect(reply, &QNetworkReply::finished, this, &Storage::onListFilesFinished);
 }
 
 
-void Storage::networkReplyFile()
+void Storage::onListFilesFinished()
 {
     QNetworkReply *reply = qobject_cast<QNetworkReply*>(sender());
-
     QByteArray response = reply -> readAll();
-    parseResponse(response);
+
+    QString error = extractError(reply, response);
+    if (!error.isEmpty())
+        emit listFilesFailed(error);
+    else
+        parseResponse(response);
 
     reply->deleteLater();
 }
@@ -145,14 +189,20 @@ void Storage::downloadFile(const QString &cloudFilePath)
 
     QNetworkReply* reply = m_networkAccessManager -> get(newRequest);
 
-    connect(reply, &QNetworkReply::readyRead, this, &Storage::networkReplyDownloadFile);
+    connect(reply, &QNetworkReply::finished, this, &Storage::onDownloadFinished);
 }
 
 
-void Storage::networkReplyDownloadFile()
+void Storage::onDownloadFinished()
 {
     QNetworkReply* reply = qobject_cast<QNetworkReply*>(sender());
     QByteArray response = reply -> readAll();
 
-    emit setDownloadFile(response);
+    QString error = extractError(reply, response);
+    if (!error.isEmpty())
+        emit downloadFailed(error);
+    else
+        emit setDownloadFile(response);
+
+    reply->deleteLater();
 }

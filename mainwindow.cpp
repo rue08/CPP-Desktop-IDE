@@ -81,8 +81,13 @@ MainWindow::MainWindow(QWidget *parent)
 
     connect(localFiles, &QTreeWidget::itemDoubleClicked, this, &MainWindow::localFilesItemClicked);
     connect(cloudFiles, &QTreeWidget::itemDoubleClicked, this, &MainWindow::cloudFilesItemClicked);
+    connect(storage, &Storage::cloudFilesCleared, cloudFiles, &QTreeWidget::clear);
     connect(storage, &Storage::setCloudFiles, this, &MainWindow::onSetCloudFiles);
     connect(storage, &Storage::setDownloadFile, this, &MainWindow::onDownloadFile);
+    connect(storage, &Storage::uploadSucceeded, this, &MainWindow::onUploadSucceeded);
+    connect(storage, &Storage::uploadFailed, this, &MainWindow::onUploadFailed);
+    connect(storage, &Storage::listFilesFailed, this, &MainWindow::onListFilesFailed);
+    connect(storage, &Storage::downloadFailed, this, &MainWindow::onDownloadFailed);
     connect(loginWindow, &LoginWindow::enableActionUpload, this, &MainWindow::onEnableActionUpload);
 
     if (!settings.contains("splitterDimensions"))
@@ -142,11 +147,7 @@ void MainWindow::closeTab(int index)
         msgBox.exec();
 
         if (msgBox.clickedButton() -> text() == uploadButton->text())
-        {
-            int temp = 1;
-            storage -> setPendingTasks(temp);
             storage -> uploadFile(curr -> toPlainText().toUtf8(), filePath);
-        }
         else if (msgBox.clickedButton() -> text() == saveButton->text())
             on_actionSave_triggered();
         else if (msgBox.clickedButton()->text() == closeButton->text())
@@ -185,15 +186,15 @@ void MainWindow::closeTab(int index)
 
     int reply = msgBox.exec();
 
-    if (reply == 0x00800000)
+    if (reply == QMessageBox::Discard)
     {
         theWorkspace->removeTab(index);
         delete curr;
         return;
     }
-    else if (reply == 0x00400000)
+    else if (reply == QMessageBox::Cancel)
         return;
-    else if (reply == 0x00000800)
+    else if (reply == QMessageBox::Save)
     {
         on_actionSave_triggered();
         if (!filePath.isEmpty())
@@ -391,7 +392,6 @@ void MainWindow::onEnableActionUpload(bool flag, const QString& idToken, const Q
     ui -> actionUpload -> setEnabled(flag);
     storage -> setIdToken(idToken);
     storage -> setUid(uid);
-    cloudFiles -> clear();
     storage -> listFiles();
 }
 
@@ -462,11 +462,8 @@ void MainWindow::on_actionUpload_triggered()
         return;
     if (curr && ls.size() == 0)
     {
-        cloudFiles->clear();
         if (curr -> property("filePath").toString().contains("users", Qt::CaseSensitive))
         {
-            int temp = 1;
-            storage -> setPendingTasks(temp);
             storage -> uploadFile(curr -> toPlainText().toUtf8(), curr -> property("filePath").toString());
             return;
         }
@@ -475,20 +472,25 @@ void MainWindow::on_actionUpload_triggered()
         return;
     }
 
+    QStringList unreadableFiles;
+
     for (int i = 0; i < ls.size(); i++)
     {
-        if (i == 0)
-        {
-            cloudFiles->clear();
-            storage -> setPendingTasks(ls.size());
-        }
-
         filePath = ls[i] -> data(0, Qt::UserRole).toString();
         QFile openFile(filePath);
-        openFile.open(QIODevice::ReadOnly | QIODevice::Text);
 
-        storage -> uploadFile(openFile.readAll(), ls[i] -> data(0, Qt::UserRole).toString());
+        if (!openFile.open(QIODevice::ReadOnly | QIODevice::Text))
+        {
+            unreadableFiles << QFileInfo(filePath).fileName();
+            continue;
+        }
+
+        storage -> uploadFile(openFile.readAll(), filePath);
     }
+
+    if (!unreadableFiles.isEmpty())
+        QMessageBox::warning(this, "Upload Failed",
+            "The following files could not be read and were skipped:\n" + unreadableFiles.join("\n"));
 }
 
 void MainWindow::onSetCloudFiles(const QString &fileName, const QString &cloudFilePath)
@@ -497,8 +499,41 @@ void MainWindow::onSetCloudFiles(const QString &fileName, const QString &cloudFi
 
     QTreeWidgetItem* child = new QTreeWidgetItem(cloudFiles);
     child -> setText(0, fileName);
-    child -> setIcon(0, QIcon(":/icons/Icons/icons8-c++.svg"));
+
+    // If this file was just uploaded, show a success tick instead of the
+    // usual file icon for this one refresh, then stop tracking it.
+    if (recentlyUploadedCloudPaths.remove(cloudFilePath))
+        child -> setIcon(0, QIcon(":/icons/Icons/check_circle_24dp_34A853_FILL0_wght400_GRAD0_opsz24.svg"));
+    else
+        child -> setIcon(0, QIcon(":/icons/Icons/icons8-c++.svg"));
+
     child -> setData(0, Qt::UserRole, cloudFilePath);
+}
+
+
+void MainWindow::onUploadSucceeded(const QString &localFilePath, const QString &cloudFilePath)
+{
+    recentlyUploadedCloudPaths.insert(cloudFilePath);
+    ui -> statusbar -> showMessage(QString("Uploaded \"%1\"").arg(QFileInfo(localFilePath).fileName()), 4000);
+}
+
+
+void MainWindow::onUploadFailed(const QString &localFilePath, const QString &errorString)
+{
+    QMessageBox::warning(this, "Upload Failed",
+        QString("Could not upload \"%1\":\n%2").arg(QFileInfo(localFilePath).fileName(), errorString));
+}
+
+
+void MainWindow::onListFilesFailed(const QString &errorString)
+{
+    ui -> statusbar -> showMessage("Could not refresh cloud files: " + errorString, 5000);
+}
+
+
+void MainWindow::onDownloadFailed(const QString &errorString)
+{
+    QMessageBox::warning(this, "Download Failed", "Could not download the file:\n" + errorString);
 }
 
 void MainWindow::cloudFilesItemClicked(QTreeWidgetItem *item)
