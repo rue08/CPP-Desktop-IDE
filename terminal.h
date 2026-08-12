@@ -24,7 +24,7 @@ private slots:
     void getFileName();
 
 private:
-    MainWindow *m_window;
+    MainWindow *mainWindow;
     QProcess *myProcess; // Initialization moved to .cpp
     QString name = "";
     QString path = "";

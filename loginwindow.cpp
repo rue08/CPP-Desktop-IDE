@@ -9,7 +9,7 @@
 LoginWindow::LoginWindow(MainWindow *mainWindow, QWidget *parent)
     : QDialog(parent)
     , ui(new Ui::LoginWindow)
-    , m_window(mainWindow)
+    , mainWindow(mainWindow)
 {
     ui->setupUi(this);
 
@@ -17,6 +17,26 @@ LoginWindow::LoginWindow(MainWindow *mainWindow, QWidget *parent)
 
     connect(auth, &Authenticator::loginFailed, this, &LoginWindow::onLoginFailed);
     connect(auth, &Authenticator::loginSucceeded, this, &LoginWindow::onLoginSucceeded);
+    connect(auth, &Authenticator::tokenRefreshed, this, &LoginWindow::onTokenRefreshed);
+    connect(auth, &Authenticator::sessionExpired, this, &LoginWindow::onSessionExpired);
+}
+
+
+void LoginWindow::refreshSessionNow()
+{
+    auth -> refreshIdToken();
+}
+
+
+void LoginWindow::onTokenRefreshed(const QString &idToken)
+{
+    emit idTokenRefreshed(idToken);
+}
+
+
+void LoginWindow::onSessionExpired()
+{
+    emit sessionExpired();
 }
 
 LoginWindow::~LoginWindow()
@@ -34,7 +54,7 @@ void LoginWindow::on_loginButton_clicked()
 
 void LoginWindow::onLoginSucceeded(const QString &idToken, const QString &uid)
 {
-    m_window -> statusBar() -> showMessage("Successfully logged in.", 2000);
+    mainWindow -> statusBar() -> showMessage("Successfully logged in.", 2000);
     emit enableActionUpload(true, idToken, uid);
     close();
 }
@@ -49,6 +69,6 @@ void LoginWindow::on_signUpButton_clicked()
 
 void LoginWindow::onLoginFailed()
 {
-    m_window -> statusBar() -> showMessage("Incorrect email/password.", 2000);
+    mainWindow -> statusBar() -> showMessage("Incorrect email/password.", 2000);
 }
 

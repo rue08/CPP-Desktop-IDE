@@ -3,7 +3,7 @@
 
 Terminal::Terminal(MainWindow *mainWindow, QWidget *parent)
     : QWidget(parent),
-    m_window(mainWindow)
+    mainWindow(mainWindow)
 {
     // Initialize properly with 'this' so it is deleted when Terminal is deleted
     myProcess = new QProcess(this);
@@ -51,8 +51,8 @@ void Terminal::runFile()
 
 void Terminal::getFileName()
 {
-    m_window -> curr = qobject_cast<QPlainTextEdit*>(m_window -> theWorkspace -> currentWidget());
-    path = m_window -> curr -> property("filePath").toString();
+    mainWindow -> curr = qobject_cast<QPlainTextEdit*>(mainWindow -> theWorkspace -> currentWidget());
+    path = mainWindow -> curr -> property("filePath").toString();
     QFileInfo fi(path);
     name = fi.fileName();
 }

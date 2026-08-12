@@ -78,6 +78,10 @@ private slots:
     void onListFilesFailed(const QString &errorString);
     void onDownloadFailed(const QString &errorString, QObject *targetTab);
 
+    void onTokenRefreshRequired();
+    void onIdTokenRefreshed(const QString &idToken);
+    void onSessionExpired();
+
 private:
     Ui::MainWindow *ui;
     QStackedWidget *localFilesStack;
@@ -99,6 +103,12 @@ private:
     // Cloud paths whose upload just succeeded and are waiting for the next
     // onSetCloudFiles() pass to be shown with a success icon.
     QSet<QString> recentlyUploadedCloudPaths;
+
+    // Guards against onSessionExpired() re-entering loginWindow->exec() --
+    // a cascade of requests failing against the same dead session (e.g. a
+    // retried listFiles() after abandonPendingRetries()) can each emit
+    // sessionExpired() again while the first dialog is still showing.
+    bool handlingSessionExpiry = false;
 
 protected:
     void closeEvent(QCloseEvent *event) override;

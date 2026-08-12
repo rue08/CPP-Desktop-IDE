@@ -88,7 +88,10 @@ MainWindow::MainWindow(QWidget *parent)
     connect(storage, &Storage::uploadFailed, this, &MainWindow::onUploadFailed);
     connect(storage, &Storage::listFilesFailed, this, &MainWindow::onListFilesFailed);
     connect(storage, &Storage::downloadFailed, this, &MainWindow::onDownloadFailed);
+    connect(storage, &Storage::tokenRefreshRequired, this, &MainWindow::onTokenRefreshRequired);
     connect(loginWindow, &LoginWindow::enableActionUpload, this, &MainWindow::onEnableActionUpload);
+    connect(loginWindow, &LoginWindow::idTokenRefreshed, this, &MainWindow::onIdTokenRefreshed);
+    connect(loginWindow, &LoginWindow::sessionExpired, this, &MainWindow::onSessionExpired);
 
     if (!settings.contains("splitterDimensions"))
         splitter -> setSizes({100, 100});
@@ -547,6 +550,44 @@ void MainWindow::onDownloadFailed(const QString &errorString, QObject *targetTab
     }
 
     QMessageBox::warning(this, "Download Failed", "Could not download the file:\n" + errorString);
+}
+
+
+void MainWindow::onTokenRefreshRequired()
+{
+    // Shown indefinitely (timeout 0) -- it gets naturally replaced once the
+    // retried request resolves, via onUploadSucceeded/onUploadFailed/etc.
+    ui -> statusbar -> showMessage("Session expired — refreshing, please wait...", 0);
+    loginWindow -> refreshSessionNow();
+}
+
+
+void MainWindow::onIdTokenRefreshed(const QString &idToken)
+{
+    // Updates the token and transparently redoes everything that was queued
+    // waiting on this refresh.
+    storage -> resumeAfterTokenRefresh(idToken);
+}
+
+
+void MainWindow::onSessionExpired()
+{
+    if (handlingSessionExpiry)
+        return;
+    handlingSessionExpiry = true;
+
+    storage -> abandonPendingRetries();
+
+    ui -> actionUpload -> setEnabled(false);
+    cloudFiles -> clear();
+    cloudFilesStack -> setCurrentWidget(cloudFilesArea);
+
+    ui -> statusbar -> showMessage("Your session has expired. Please log in again.", 5000);
+
+    loginWindow -> setModal(true);
+    loginWindow -> exec();
+
+    handlingSessionExpiry = false;
 }
 
 void MainWindow::cloudFilesItemClicked(QTreeWidgetItem *item)
