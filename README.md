@@ -1,51 +1,73 @@
 # C++ Desktop IDE
 
 ## Overview
-A lightweight and self-contained **C++ IDE**, designed to solve the problem of accessing and managing code across multiple machines.
+A lightweight, self-contained **C++ IDE** built to solve a simple problem: your code should be as easy to pick up from anywhere as your photos or documents already are.
 
-
-Cloud backup systems have made personal data such as files and photos easily accessible from anywhere, enabling seamless creation, modification, and synchronisation. However, this level of convenience is not commonly available for raw source code in a structured development environment.
-
-
-This project solves addresses this gap by making the raw code files available anywhere and at any time with just a simple Sign_Up, giving the user freedom to manage their code from any machine.
+Cloud backup has made personal files effortless to access and sync across machines. Raw source code, in a real development environment, has never had that same convenience. This project closes that gap — sign up, and your files are available from any machine you install the IDE on.
 
 ## Features
-- Designed a custom C++ IDE environment using Qt.
-- Integrated a process manager to drive the ```g++``` toolchain for compilation and execution.
-- Built a cloud-backed file system using REST APIs via QtNetwork.
-- Supports asynchronous upload/download of code files.
-- Implemented real-time file management and error handling.
+- A custom C++ editor built on Qt, with syntax highlighting.
+- One-click compile & run, driving the `g++` toolchain directly from the editor.
+- A cloud-backed file system — save a file locally, upload it, and pull it down again from any other machine you're signed into.
+- Asynchronous upload/download with real-time status feedback.
+- Local file and folder management alongside your cloud files, side by side.
 
 ## Tech Stack
 - **Language**: C++
-- **Framework**: Qt
-- **BaaS + Cloud**: Firebase
+- **Framework**: Qt (Widgets + Network)
+- **BaaS + Cloud**: Firebase (Authentication, Firestore, Cloud Storage)
 - **Compiler**: g++
 - **Networking**: QtNetwork (REST APIs)
 
-## Installation
-### Prerequisites
-- Qt Creator
-- g++/Clang
+## Getting Started
 
-### Steps
-1. Open Terminal.
-2. Change the current working directory to the location where you want the cloned directory.
-3. Type ```git clone https://github.com/rue08/CPP-Desktop-IDE.git``` and hit Enter.
-4. Open the Qt Creator and from the File in the menubar, click Open Project, navigate to the cloned folder.
-5. Click on ```CmakeLists.txt``` file and hit Enter.
-6. In the bottom left corner, hit Run.
+### Prerequisites
+- [Qt](https://www.qt.io/download-qt-installer) (Qt 6 recommended, Qt 5 also supported) with the **Widgets** and **Network** modules
+- CMake 3.16+
+- A C++17 compiler (`g++` or Clang)
+- [Qt Creator](https://www.qt.io/product/development-tools) — optional, but the simplest way to get Qt and build in one step
+
+### Build
+
+1. Clone the repo:
+   ```bash
+   git clone https://github.com/rue08/CPP-Desktop-IDE.git
+   cd CPP-Desktop-IDE
+   ```
+
+2. Build it, either way:
+
+   **Using Qt Creator** (easiest)
+   - File → Open Project → select `CMakeLists.txt`
+   - Let it configure the kit, then hit **Run** ▶️ in the bottom-left corner.
+
+   **From the command line**
+   ```bash
+   cmake -B build -DCMAKE_PREFIX_PATH=<path-to-your-Qt-install>   # e.g. ~/Qt/6.10.1/macos
+   cmake --build build
+   ```
+
+3. Launch the built `IDE` binary. That's it — no extra config needed, the cloud backend ships preconfigured out of the box.
+
+## Using the IDE
+
+1. **Sign up / log in** — click the login icon in the toolbar and create an account with an email and password. This is what ties your files to you across machines.
+2. **Create or open a file** — `Ctrl+N` for a new file, `Ctrl+O` to open an existing one, or "Open Folder..." to work across a whole project.
+3. **Write and save** — `Ctrl+S` saves locally, same as any editor.
+4. **Run it** — hit the ▶️ **Run** button to compile and execute the current file with `g++`; output opens in a terminal window.
+5. **Push to the cloud** — with the file open, click the ☁️ **Upload** button to save it to your account.
+6. **Pull it down elsewhere** — open **The Vault** from the toolbar to browse the files you've uploaded, and click one to bring it down to whatever machine you're on.
 
 ## Project Status
-The main aim is to build a full featured project and therefore it is under development.
+The main aim is to build a full-featured project, and it's under active development.
 
-### Some feature still to come
-1. Move from Firebase to Node.js backend.
-2. More robust file handling with an option to upload folders. Currently only code files can be uploaded.
-3. Improved UI/UX.
+### Coming next
+1. Move from Firebase to a Node.js backend.
+2. More robust file handling, including uploading whole folders (currently limited to individual code files).
+3. Continued UI/UX improvements.
 
 ## Author
 Mehul Sharma\
 Gmail: mehssi2004@gmail.com
 
-If you have any suggestions feel free to reach out to me via mail and if you liked the project, make sure to give a star ⭐️.
+If you have any suggestions feel free to reach out to me via mail, and if you liked the project, make sure to give a star ⭐️.
