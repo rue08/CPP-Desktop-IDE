@@ -59,6 +59,14 @@ Already have a C++ compiler installed (e.g. an existing MinGW/g++ on Windows)? T
    cmake -B build -DCMAKE_PREFIX_PATH=<path-to-your-Qt-install>   # e.g. ~/Qt/6.10.1/macos
    cmake --build build
    ```
+   On Windows, pass the generator explicitly and run this from the Qt-provided MinGW command
+   prompt (Start Menu → "Qt \<version\> (MinGW 64-bit)"), not a plain `cmd.exe` — otherwise
+   CMake defaults to looking for MSVC's `nmake`, which won't be on `PATH`, and configuration
+   fails before it ever reaches your compiler:
+   ```bat
+   cmake -B build -G "MinGW Makefiles" -DCMAKE_PREFIX_PATH="C:\Qt\6.11.1\mingw_64"
+   cmake --build build
+   ```
 
 3. Launch the built `IDE` binary.
 
