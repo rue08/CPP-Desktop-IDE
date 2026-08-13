@@ -24,3 +24,7 @@ Makefile*
 
 .qtcreator/
 build/
+
+# Bundled Windows MinGW-w64 toolchain -- too large for git, fetched/placed
+# manually per windows/README.md, not tracked as source.
+windows/mingw64/

@@ -21,13 +21,26 @@ Cloud backup has made personal files effortless to access and sync across machin
 
 ## Getting Started
 
-### Prerequisites
+### Option 1: Download a build (easiest)
+
+Grab the latest packaged release for your OS from the [Releases page](https://github.com/rue08/CPP-Desktop-IDE/releases). Nothing else to install first:
+
+- **macOS**: open the `.dmg` and drag the app into Applications.
+- **Windows**: unzip and run `IDE.exe`. The download includes everything needed to compile and run C++ files — no separate compiler install required.
+
+That's it — no extra config needed either way, the cloud backend ships preconfigured out of the box.
+
+### Option 2: Build from source
+
+Already have a C++ compiler installed (e.g. an existing MinGW/g++ on Windows)? This is the simpler path for you — no need for the larger bundled download, the build just uses what's already on your machine.
+
+**Prerequisites**
 - [Qt](https://www.qt.io/download-qt-installer) (Qt 6 recommended, Qt 5 also supported) with the **Widgets** and **Network** modules
 - CMake 3.16+
-- A C++17 compiler (`g++` or Clang)
+- A C++17 compiler (`g++` or Clang) on `PATH` — on Windows, see [`windows/README.md`](windows/README.md) for bundling one into your own build instead
 - [Qt Creator](https://www.qt.io/product/development-tools) — optional, but the simplest way to get Qt and build in one step
 
-### Build
+**Build**
 
 1. Clone the repo:
    ```bash
@@ -47,7 +60,7 @@ Cloud backup has made personal files effortless to access and sync across machin
    cmake --build build
    ```
 
-3. Launch the built `IDE` binary. That's it — no extra config needed, the cloud backend ships preconfigured out of the box.
+3. Launch the built `IDE` binary.
 
 ## Using the IDE
 

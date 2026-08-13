@@ -80,6 +80,25 @@ install(TARGETS IDE
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
 )
 
+# Bundle a portable MinGW-w64 toolchain next to IDE.exe so Run works on
+# Windows with no separate compiler install. See windows/README.md for
+# where to obtain one -- this step is a no-op (with a warning) until a
+# toolchain has actually been placed there.
+if(WIN32)
+    set(MINGW_BUNDLE_DIR "${CMAKE_SOURCE_DIR}/windows/mingw64")
+    if(EXISTS "${MINGW_BUNDLE_DIR}")
+        add_custom_command(TARGET IDE POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_directory
+                    "${MINGW_BUNDLE_DIR}" "$<TARGET_FILE_DIR:IDE>/mingw64"
+            COMMENT "Copying bundled MinGW-w64 toolchain next to IDE.exe"
+        )
+        install(DIRECTORY "${MINGW_BUNDLE_DIR}/" DESTINATION "${CMAKE_INSTALL_BINDIR}/mingw64")
+    else()
+        message(STATUS "windows/mingw64/ not found -- IDE.exe will fall back to g++ on PATH. "
+                        "See windows/README.md to bundle a toolchain before packaging a release.")
+    endif()
+endif()
+
 if(QT_VERSION_MAJOR EQUAL 6)
     qt_finalize_executable(IDE)
 endif()
