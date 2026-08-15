@@ -1,0 +1,19 @@
+{
+  "name": "ide-backend",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Node.js + Postgres backend for file storage, replacing Firebase Firestore/Storage. Firebase Authentication is kept as-is; this server only verifies Firebase ID tokens.",
+  "main": "src/index.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "pg": "^8.12.0",
+    "jsonwebtoken": "^9.0.2",
+    "jwks-rsa": "^3.1.0",
+    "dotenv": "^16.4.5"
+  }
+}
