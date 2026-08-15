@@ -21,8 +21,21 @@ class Storage : public QObject
 public:
     explicit Storage(QObject *parent = nullptr);
 
-    void setUid(const QString &uid);
     void setIdToken(const QString &idToken);
+
+    // Base URL of the self-hosted backend (e.g. "http://localhost:3000" or
+    // an ngrok tunnel), with no trailing slash. Unlike the Firebase REST
+    // endpoints this replaces, it's not a compile-time constant -- it's
+    // meant to be user-configurable, since it can change on every tunnel
+    // restart. Every request below is built against this.
+    void setBackendUrl(const QString &backendUrl);
+
+    // Verifies the current idToken against the backend and upserts the
+    // corresponding users row -- must succeed once per session (right after
+    // login) before any other request below will be accepted; the backend
+    // rejects requests from tokens with no matching users row. Reports
+    // backendLoginSucceeded() or backendLoginFailed().
+    void loginToBackend();
 
     // `targetTab` is opaque to Storage -- it's just echoed back on
     // setDownloadFile()/downloadFailed() so the caller can tell which of its
@@ -30,7 +43,10 @@ public:
     // flight at once or the UI has moved on by the time the reply arrives.
     // If targetTab is destroyed before the download finishes, it comes back
     // as nullptr instead of a dangling pointer.
-    void downloadFile(const QString &cloudFilePath, QObject *targetTab);
+    //
+    // `fileId` is the backend's numeric file id (as a string), as handed
+    // back via setCloudFiles().
+    void downloadFile(const QString &fileId, QObject *targetTab);
     void listFiles();
 
     // Queues a single file for upload. Safe to call repeatedly in a loop for
@@ -48,9 +64,8 @@ public:
 private:
     QNetworkAccessManager *networkAccessManager;
     QNetworkRequest newRequest;
-    QString uid;
     QString idToken;
-    QString firebaseBucket = "mehul-s-ide.firebasestorage.app";
+    QString backendUrl;
 
     QString cloudFileName = "";
 
@@ -68,14 +83,12 @@ private:
     void onDownloadFinished(const QString &cloudFilePath, QPointer<QObject> targetTab);
 
     void parseResponse(const QByteArray &response);
-    void writeFirestoreMetadata(const QString &cloudFilePath, const QString &localFilePath);
 
-    // Called exactly once per uploadFile() call, on success or failure, once
-    // that upload's work (including its metadata write) is fully done.
+    // Called exactly once per uploadFile() call, on success or failure.
     void finishPendingUpload();
 
     // Returns a human-readable error if the reply failed (transport error, or
-    // a Firebase-style {"error": {...}} JSON body), otherwise a null QString.
+    // a backend-style {"error": "..."} JSON body), otherwise a null QString.
     static QString extractError(QNetworkReply *reply, const QByteArray &response);
 
     // True specifically when the failure means "the idToken was rejected" --
@@ -103,6 +116,9 @@ signals:
     void uploadFailed(const QString &localFilePath, const QString &errorString);
     void listFilesFailed(const QString &errorString);
     void downloadFailed(const QString &errorString, QObject *targetTab);
+
+    void backendLoginSucceeded();
+    void backendLoginFailed(const QString &errorString);
 
     // Storage has no access to Authenticator -- this just asks whoever owns
     // both to perform a refresh and report back via resumeAfterTokenRefresh()

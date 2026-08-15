@@ -82,6 +82,10 @@ private slots:
     void onIdTokenRefreshed(const QString &idToken);
     void onSessionExpired();
 
+    void onBackendLoginSucceeded();
+    void onBackendLoginFailed(const QString &errorString);
+    void on_actionSettings_triggered();
+
 private:
     Ui::MainWindow *ui;
     QStackedWidget *localFilesStack;

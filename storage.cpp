@@ -8,27 +8,61 @@ Storage::Storage(QObject *parent)
     networkAccessManager = new QNetworkAccessManager(this);
 }
 
-void Storage::setUid(const QString &uid)
-{
-    this -> uid = uid;
-}
-
 void Storage::setIdToken(const QString &idToken)
 {
     this -> idToken = idToken;
 }
 
+void Storage::setBackendUrl(const QString &backendUrl)
+{
+    // Trim any trailing slash so callers below can unconditionally do
+    // backendUrl + "/path" without ever risking a doubled slash.
+    QString trimmed = backendUrl;
+    while (trimmed.endsWith('/'))
+        trimmed.chop(1);
+
+    this -> backendUrl = trimmed;
+}
+
+
+void Storage::loginToBackend()
+{
+    QJsonObject payload;
+    payload["id_token"] = idToken;
+
+    newRequest = QNetworkRequest{QUrl(backendUrl + "/auth/firebase/login")};
+    newRequest.setHeader(QNetworkRequest::ContentTypeHeader, QString("application/json"));
+
+    QNetworkReply* reply = networkAccessManager -> post(newRequest, QJsonDocument(payload).toJson());
+
+    connect(reply, &QNetworkReply::finished, this, [this]() {
+        QNetworkReply *reply = qobject_cast<QNetworkReply*>(sender());
+        QByteArray response = reply -> readAll();
+
+        // Deliberately not routed through deferIfAuthError: this call *is*
+        // how the session gets established in the first place, so a 401
+        // here means the idToken itself is bad -- retrying via the normal
+        // refresh dance would just come back to this same call.
+        QString error = extractError(reply, response);
+
+        if (error.isEmpty())
+            emit backendLoginSucceeded();
+        else
+            emit backendLoginFailed(error);
+
+        reply->deleteLater();
+    });
+}
+
 
 QString Storage::extractError(QNetworkReply *reply, const QByteArray &response)
 {
-    // Firebase's REST APIs return a JSON body shaped like
-    // {"error": {"code": ..., "message": ..., "status": ...}} on failure.
-    // Prefer that message when present since it's far more specific than
-    // Qt's generic transport-level error.
+    // The backend's error responses are shaped like {"error": "message"} --
+    // a flat string, unlike Firebase's nested {"error": {"message": ...}}.
     QJsonDocument jsonDocument = QJsonDocument::fromJson(response);
     if (jsonDocument.isObject() && jsonDocument.object().contains("error"))
     {
-        QString message = jsonDocument.object().value("error").toObject().value("message").toString();
+        QString message = jsonDocument.object().value("error").toString();
         return message.isEmpty() ? QStringLiteral("The server returned an error.") : message;
     }
 
@@ -41,14 +75,12 @@ QString Storage::extractError(QNetworkReply *reply, const QByteArray &response)
 
 bool Storage::isAuthTokenError(QNetworkReply *reply, const QByteArray &response)
 {
-    QJsonDocument jsonDocument = QJsonDocument::fromJson(response);
-    if (jsonDocument.isObject() && jsonDocument.object().contains("error"))
-    {
-        QString status = jsonDocument.object().value("error").toObject().value("status").toString();
-        if (status == "UNAUTHENTICATED")
-            return true;
-    }
+    Q_UNUSED(response);
 
+    // The backend returns 401 specifically for a missing/invalid/expired
+    // token (see middleware/auth.js) -- as opposed to 403, which means the
+    // token is fine but there's no users row for it yet (loginToBackend()
+    // was never called), a refresh wouldn't fix that.
     return reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt() == 401;
 }
 
@@ -108,15 +140,17 @@ void Storage::uploadFile(const QByteArray& fileData, const QString& localFilePat
 
 void Storage::startUpload(const QByteArray& fileData, const QString& localFilePath)
 {
-    QString remotePath = QString("users/%1/%2").arg(uid, QFileInfo(localFilePath).fileName());
-    QString encodedPath = QUrl::toPercentEncoding(remotePath);
-    QString uploadFileEndpoint = "https://firebasestorage.googleapis.com/v0/b/" + firebaseBucket + "/o?uploadType=media&name=" + encodedPath;
+    QString filename = QFileInfo(localFilePath).fileName();
 
-    newRequest = QNetworkRequest{QUrl(uploadFileEndpoint)};
+    QJsonObject payload;
+    payload["filename"] = filename;
+    payload["content"] = QString::fromUtf8(fileData);
+
+    newRequest = QNetworkRequest{QUrl(backendUrl + "/files")};
     newRequest.setRawHeader("Authorization", ("Bearer " + idToken).toUtf8());
-    newRequest.setHeader(QNetworkRequest::ContentTypeHeader, QString("application/octet-stream"));
+    newRequest.setHeader(QNetworkRequest::ContentTypeHeader, QString("application/json"));
 
-    QNetworkReply* reply = networkAccessManager -> post(newRequest, fileData);
+    QNetworkReply* reply = networkAccessManager -> post(newRequest, QJsonDocument(payload).toJson());
 
     connect(reply, &QNetworkReply::finished, this, [this, fileData, localFilePath]() {
         this -> onUploadFinished(fileData, localFilePath);
@@ -152,69 +186,16 @@ void Storage::onUploadFinished(const QByteArray &fileData, const QString& localF
         return;
     }
 
+    // The backend hands back the row it just created/updated, keyed by its
+    // numeric id -- that id is what setCloudFiles()/downloadFile() use from
+    // here on to refer to this file.
     QJsonDocument jsonDocument = QJsonDocument::fromJson(response);
+    QString fileId = QString::number(jsonDocument.object().value("id").toInt());
 
-    // Firebase returns the full path in the "name" field on success
-    QString cloudFilePath = jsonDocument.object().value("name").toString();
-
-    writeFirestoreMetadata(cloudFilePath, localFilePath);
+    emit uploadSucceeded(localFilePath, fileId);
+    finishPendingUpload();
 
     reply->deleteLater();
-}
-
-
-void Storage::writeFirestoreMetadata(const QString &cloudFilePath, const QString& localFilePath)
-{
-    QString fileMetadataEndpoint = "https://firestore.googleapis.com/v1/projects/mehul-s-ide/databases/(default)/documents/Users/" + uid + "/Files/" + QFileInfo(localFilePath).fileName();
-
-    QJsonObject fields;
-    fields["name"] = QJsonObject {
-        {"stringValue", QFileInfo(localFilePath).fileName()}
-    };
-    fields["cloudPath"] = QJsonObject {
-        {"stringValue", cloudFilePath}
-    };
-
-    QJsonObject root;
-    root["fields"] =  fields;
-
-    QJsonDocument jsonPayload(root);
-
-    newRequest = QNetworkRequest{QUrl(fileMetadataEndpoint)};
-    newRequest.setRawHeader("Authorization", ("Bearer " + idToken).toUtf8());
-    newRequest.setHeader(QNetworkRequest::ContentTypeHeader, QString("application/json"));
-
-    QNetworkReply* reply = networkAccessManager -> sendCustomRequest(newRequest, "PATCH", jsonPayload.toJson());
-
-    connect(reply, &QNetworkReply::finished, this, [this, reply, localFilePath, cloudFilePath]() {
-        QByteArray response = reply -> readAll();
-
-        if (deferIfAuthError(reply, response, [this, cloudFilePath, localFilePath](bool refreshed) {
-                if (refreshed)
-                    this -> writeFirestoreMetadata(cloudFilePath, localFilePath);
-                else
-                {
-                    emit uploadFailed(localFilePath, "Session expired. Please log in again.");
-                    finishPendingUpload();
-                }
-            }))
-        {
-            reply->deleteLater();
-            return;
-        }
-
-        QString error = extractError(reply, response);
-
-        if (error.isEmpty())
-            emit uploadSucceeded(localFilePath, cloudFilePath);
-        else
-            emit uploadFailed(localFilePath, error);
-
-        // Always settle the batch counter, whether this upload succeeded or not.
-        finishPendingUpload();
-
-        reply->deleteLater();
-    });
 }
 
 
@@ -231,8 +212,7 @@ void Storage::listFiles()
 {
     emit cloudFilesCleared();
 
-    QString listFilesEndpoint = "https://firestore.googleapis.com/v1/projects/mehul-s-ide/databases/(default)/documents/Users/" + uid + "/Files";
-    QNetworkRequest request{QUrl(listFilesEndpoint)};
+    QNetworkRequest request{QUrl(backendUrl + "/files")};
     request.setRawHeader("Authorization", ("Bearer " + idToken).toUtf8());
     request.setHeader(QNetworkRequest::ContentTypeHeader, QString("application/json"));
 
@@ -270,26 +250,23 @@ void Storage::onListFilesFinished()
 void Storage::parseResponse(const QByteArray &response)
 {
     QJsonDocument jsonDocument = QJsonDocument::fromJson(response);
+    QJsonArray files = jsonDocument.array();
 
-    QJsonArray documents = jsonDocument.object().value("documents").toArray();
-
-    for (int i = 0; i < documents.size(); i++)
+    for (int i = 0; i < files.size(); i++)
     {
-        QJsonObject fileMetaData = documents[i].toObject();
-        QJsonObject fields = fileMetaData.value("fields").toObject();
+        QJsonObject file = files[i].toObject();
 
-        QString fileName = fields.value("name").toObject().value("stringValue").toString();
-        QString cloudFilePath = fields.value("cloudPath").toObject().value("stringValue").toString();
+        QString fileName = file.value("filename").toString();
+        QString fileId = QString::number(file.value("id").toInt());
 
-        emit setCloudFiles(fileName, cloudFilePath);
+        emit setCloudFiles(fileName, fileId);
     }
 }
 
 
-void Storage::downloadFile(const QString &cloudFilePath, QObject *targetTab)
+void Storage::downloadFile(const QString &fileId, QObject *targetTab)
 {
-    QString downloadFileEndpoint = "https://firebasestorage.googleapis.com/v0/b/" + firebaseBucket + "/o/" + QString(QUrl::toPercentEncoding(cloudFilePath)) + "?alt=media";
-    newRequest = QNetworkRequest{QUrl(downloadFileEndpoint)};
+    newRequest = QNetworkRequest{QUrl(backendUrl + "/files/" + fileId)};
     newRequest.setRawHeader("Authorization", ("Bearer " + idToken).toUtf8());
 
     QNetworkReply* reply = networkAccessManager -> get(newRequest);
@@ -298,18 +275,18 @@ void Storage::downloadFile(const QString &cloudFilePath, QObject *targetTab)
     // is destroyed before this download finishes (tab closed, app torn down
     // mid-download), the pointer safely resolves to null instead of dangling.
     QPointer<QObject> trackedTarget(targetTab);
-    connect(reply, &QNetworkReply::finished, this, [this, cloudFilePath, trackedTarget]() {
-        this -> onDownloadFinished(cloudFilePath, trackedTarget);
+    connect(reply, &QNetworkReply::finished, this, [this, fileId, trackedTarget]() {
+        this -> onDownloadFinished(fileId, trackedTarget);
     });
 }
 
 
-void Storage::onDownloadFinished(const QString &cloudFilePath, QPointer<QObject> targetTab)
+void Storage::onDownloadFinished(const QString &fileId, QPointer<QObject> targetTab)
 {
     QNetworkReply* reply = qobject_cast<QNetworkReply*>(sender());
     QByteArray response = reply -> readAll();
 
-    if (deferIfAuthError(reply, response, [this, cloudFilePath, targetTab](bool refreshed) {
+    if (deferIfAuthError(reply, response, [this, fileId, targetTab](bool refreshed) {
             // The tab may have been closed while we were waiting on the
             // refresh -- targetTab safely reads as null in that case, so
             // there's nothing left to retry or report into.
@@ -317,7 +294,7 @@ void Storage::onDownloadFinished(const QString &cloudFilePath, QPointer<QObject>
                 return;
 
             if (refreshed)
-                this -> downloadFile(cloudFilePath, targetTab.data());
+                this -> downloadFile(fileId, targetTab.data());
             else
                 emit downloadFailed("Session expired. Please log in again.", targetTab.data());
         }))
@@ -328,9 +305,19 @@ void Storage::onDownloadFinished(const QString &cloudFilePath, QPointer<QObject>
 
     QString error = extractError(reply, response);
     if (!error.isEmpty())
+    {
         emit downloadFailed(error, targetTab.data());
-    else
-        emit setDownloadFile(response, targetTab.data());
+        reply->deleteLater();
+        return;
+    }
+
+    // The backend returns the file row as JSON ({id, filename, content,
+    // updated_at}) -- unlike the old Firebase Storage GET, the response body
+    // itself isn't the raw file content.
+    QJsonDocument jsonDocument = QJsonDocument::fromJson(response);
+    QByteArray content = jsonDocument.object().value("content").toString().toUtf8();
+
+    emit setDownloadFile(content, targetTab.data());
 
     reply->deleteLater();
 }

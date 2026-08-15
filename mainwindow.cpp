@@ -8,6 +8,8 @@
 #include <QDir>
 #include <QDirIterator>
 #include <QStackedWidget>
+#include <QInputDialog>
+#include <QLineEdit>
 
 
 MainWindow::MainWindow(QWidget *parent)
@@ -20,6 +22,11 @@ MainWindow::MainWindow(QWidget *parent)
 
     storage = new Storage(this);
     loginWindow = new LoginWindow(this, this);
+
+    // No hardcoded default -- backend URL changes on every ngrok tunnel
+    // restart, so it's read fresh from settings each launch and only ever
+    // updated through the Settings action, never compiled in.
+    storage -> setBackendUrl(settings.value("backendUrl").toString());
 
     splitter = new QSplitter(Qt::Horizontal);
     setCentralWidget(splitter);
@@ -89,6 +96,8 @@ MainWindow::MainWindow(QWidget *parent)
     connect(storage, &Storage::listFilesFailed, this, &MainWindow::onListFilesFailed);
     connect(storage, &Storage::downloadFailed, this, &MainWindow::onDownloadFailed);
     connect(storage, &Storage::tokenRefreshRequired, this, &MainWindow::onTokenRefreshRequired);
+    connect(storage, &Storage::backendLoginSucceeded, this, &MainWindow::onBackendLoginSucceeded);
+    connect(storage, &Storage::backendLoginFailed, this, &MainWindow::onBackendLoginFailed);
     connect(loginWindow, &LoginWindow::enableActionUpload, this, &MainWindow::onEnableActionUpload);
     connect(loginWindow, &LoginWindow::idTokenRefreshed, this, &MainWindow::onIdTokenRefreshed);
     connect(loginWindow, &LoginWindow::sessionExpired, this, &MainWindow::onSessionExpired);
@@ -131,7 +140,7 @@ void MainWindow::closeTab(int index)
 
     filePath = curr -> property("filePath").toString();
 
-    if (filePath.contains("users", Qt::CaseSensitive))
+    if (curr -> property("isCloudFile").toBool())
     {
         QMessageBox msgBox(this);
         msgBox.setIcon(QMessageBox::Information);
@@ -150,7 +159,7 @@ void MainWindow::closeTab(int index)
         msgBox.exec();
 
         if (msgBox.clickedButton() -> text() == uploadButton->text())
-            storage -> uploadFile(curr -> toPlainText().toUtf8(), filePath);
+            storage -> uploadFile(curr -> toPlainText().toUtf8(), curr -> property("cloudFileName").toString());
         else if (msgBox.clickedButton() -> text() == saveButton->text())
             on_actionSave_triggered();
         else if (msgBox.clickedButton()->text() == closeButton->text())
@@ -392,10 +401,48 @@ void MainWindow::on_actionLogin_triggered()
 
 void MainWindow::onEnableActionUpload(bool flag, const QString& idToken, const QString& uid)
 {
+    Q_UNUSED(uid); // the backend derives identity from the token itself, server-side
+
     ui -> actionUpload -> setEnabled(flag);
     storage -> setIdToken(idToken);
-    storage -> setUid(uid);
+
+    // Establishes/refreshes the users row for this session before anything
+    // else is allowed to touch /files -- see onBackendLoginSucceeded().
+    storage -> loginToBackend();
+}
+
+
+void MainWindow::onBackendLoginSucceeded()
+{
     storage -> listFiles();
+}
+
+
+void MainWindow::onBackendLoginFailed(const QString &errorString)
+{
+    ui -> actionUpload -> setEnabled(false);
+    QMessageBox::warning(this, "Backend Unavailable",
+        "Could not reach the file-storage backend:\n" + errorString +
+        "\n\nCheck the backend URL under Settings.");
+}
+
+
+void MainWindow::on_actionSettings_triggered()
+{
+    bool ok = false;
+    QString currentUrl = settings.value("backendUrl").toString();
+
+    QString newUrl = QInputDialog::getText(this, "Settings", "Backend URL (e.g. an ngrok tunnel):",
+        QLineEdit::Normal, currentUrl, &ok);
+
+    if (!ok)
+        return;
+
+    while (newUrl.endsWith('/'))
+        newUrl.chop(1);
+
+    settings.setValue("backendUrl", newUrl);
+    storage -> setBackendUrl(newUrl);
 }
 
 
@@ -465,9 +512,9 @@ void MainWindow::on_actionUpload_triggered()
         return;
     if (curr && ls.size() == 0)
     {
-        if (curr -> property("filePath").toString().contains("users", Qt::CaseSensitive))
+        if (curr -> property("isCloudFile").toBool())
         {
-            storage -> uploadFile(curr -> toPlainText().toUtf8(), curr -> property("filePath").toString());
+            storage -> uploadFile(curr -> toPlainText().toUtf8(), curr -> property("cloudFileName").toString());
             return;
         }
         on_actionSave_triggered();
@@ -599,6 +646,12 @@ void MainWindow::cloudFilesItemClicked(QTreeWidgetItem *item)
 
     curr = qobject_cast<QPlainTextEdit*>(theWorkspace -> currentWidget());
     curr -> setProperty("filePath", QVariant(filePath));
+
+    // filePath here is the backend's numeric file id, not a real path --
+    // isCloudFile/cloudFileName are how the upload/close-tab flows tell this
+    // tab apart from a tab backed by a real local file.
+    curr -> setProperty("isCloudFile", true);
+    curr -> setProperty("cloudFileName", item -> text(0));
 
     // Pass this exact tab through, rather than relying on "whichever tab is
     // active" when the (asynchronous) download eventually completes -- the
