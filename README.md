@@ -15,7 +15,9 @@ Cloud backup has made personal files effortless to access and sync across machin
 ## Tech Stack
 - **Language**: C++
 - **Framework**: Qt (Widgets + Network)
-- **BaaS + Cloud**: Firebase (Authentication, Firestore, Cloud Storage)
+- **Auth**: Firebase Authentication
+- **File storage**: self-hosted [Node.js + PostgreSQL backend](server/) (`server/`) — Firebase
+  ID tokens in, files out; no Firestore/Cloud Storage involved
 - **Compiler**: g++
 - **Networking**: QtNetwork (REST APIs)
 
@@ -26,9 +28,10 @@ Cloud backup has made personal files effortless to access and sync across machin
 Grab the latest packaged release for your OS from the [Releases page](https://github.com/rue08/CPP-Desktop-IDE/releases). Nothing else to install first:
 
 - **macOS**: open the `.dmg` and drag the app into Applications.
-- **Windows**: unzip and run `IDE.exe`. The download includes everything needed to compile and run C++ files — no separate compiler install required.
+- **Windows**: unzip and run `VaultWright.exe`. The download includes everything needed to compile and run C++ files — no separate compiler install required.
 
-That's it — no extra config needed either way, the cloud backend ships preconfigured out of the box.
+Sign-up/login works out of the box either way. Cloud file storage additionally needs a running
+copy of the [`server/`](server/) backend — see **Cloud Backend** below.
 
 ### Option 2: Build from source
 
@@ -68,24 +71,36 @@ Already have a C++ compiler installed (e.g. an existing MinGW/g++ on Windows)? T
    cmake --build build
    ```
 
-3. Launch the built `IDE` binary.
+3. Launch the built `VaultWright` binary.
+
+## Cloud Backend
+
+File storage (upload/list/download) talks to the [`server/`](server/) Node.js + PostgreSQL
+backend, not Firebase — see [`server/README.md`](server/README.md) to run it (a `docker compose
+up --build` away). Firebase Authentication is unaffected; sign-up/login/refresh works
+independently of this.
+
+Because the backend's URL isn't baked into the app (it can change — e.g. an ngrok free-tier
+tunnel gets a new URL on every restart), point the app at your instance via the ⚙️ **Settings**
+button in the toolbar before using cloud features. It's saved and reused on future launches.
 
 ## Using the IDE
 
-1. **Sign up / log in** — click the login icon in the toolbar and create an account with an email and password. This is what ties your files to you across machines.
-2. **Create or open a file** — `Ctrl+N` for a new file, `Ctrl+O` to open an existing one, or "Open Folder..." to work across a whole project.
-3. **Write and save** — `Ctrl+S` saves locally, same as any editor.
-4. **Run it** — hit the ▶️ **Run** button to compile and execute the current file with `g++`; output opens in a terminal window.
-5. **Push to the cloud** — with the file open, click the ☁️ **Upload** button to save it to your account.
-6. **Pull it down elsewhere** — open **The Vault** from the toolbar to browse the files you've uploaded, and click one to bring it down to whatever machine you're on.
+1. **Point the app at your backend** — click ⚙️ **Settings** in the toolbar and enter the
+   backend's URL (see **Cloud Backend** above). Only needed once, or whenever the URL changes.
+2. **Sign up / log in** — click the login icon in the toolbar and create an account with an email and password. This is what ties your files to you across machines.
+3. **Create or open a file** — `Ctrl+N` for a new file, `Ctrl+O` to open an existing one, or "Open Folder..." to work across a whole project.
+4. **Write and save** — `Ctrl+S` saves locally, same as any editor.
+5. **Run it** — hit the ▶️ **Run** button to compile and execute the current file with `g++`; output opens in a terminal window.
+6. **Push to the cloud** — with the file open, click the ☁️ **Upload** button to save it to your account.
+7. **Pull it down elsewhere** — open **The Vault** from the toolbar to browse the files you've uploaded, and click one to bring it down to whatever machine you're on.
 
 ## Project Status
 The main aim is to build a full-featured project, and it's under active development.
 
 ### Coming next
-1. Move from Firebase to a Node.js backend.
-2. More robust file handling, including uploading whole folders (currently limited to individual code files).
-3. Continued UI/UX improvements.
+1. More robust file handling, including uploading whole folders (currently limited to individual code files).
+2. Continued UI/UX improvements.
 
 ## Author
 Mehul Sharma\
