@@ -73,19 +73,34 @@ alongside the build instead of relying on `PATH`.
 
 ## Cloud Backend
 
-File storage (upload/list/download) talks to the [`server/`](server/) Node.js + PostgreSQL
-backend, not Firebase — see [`server/README.md`](server/README.md) to run it (a `docker compose
-up --build` away). Firebase Authentication is unaffected; sign-up/login/refresh works
+File storage (upload/list/download) talks to a [`server/`](server/) Node.js + PostgreSQL
+backend, not Firebase — but as a user, **you don't need to run this yourself.** One instance is
+hosted centrally; you just need its current URL, entered via the ⚙️ **Settings** button in the
+toolbar. Firebase Authentication is unaffected either way; sign-up/login/refresh works
 independently of this.
 
-Because the backend's URL isn't baked into the app (it can change — e.g. an ngrok free-tier
-tunnel gets a new URL on every restart), point the app at your instance via the ⚙️ **Settings**
-button in the toolbar before using cloud features. It's saved and reused on future launches.
+The backend's URL isn't baked into the app because it can change (currently tunneled via ngrok's
+free tier, which assigns a new URL on every restart) — Settings has a **Fetch Latest from
+GitHub** button that pulls the current one automatically; it's saved and reused on future
+launches.
+
+**Availability:** The shared backend isn't running around the clock. It's hosted on a personal
+laptop rather than dedicated server infrastructure, reached through a free-tier ngrok tunnel —
+and free ngrok tunnels are ephemeral by design (a temporary, single-session URL, not a permanent
+one), so this setup isn't meant to run unattended 24/7. The project's also still in a pre-release
+polish phase, not yet a guaranteed-uptime service. Cloud sync (Upload/Vault) is generally
+available **3pm–12am IST**; outside that window, everything else — local editing, saving,
+compiling, running — works exactly the same, only cloud features will be unreachable until the
+backend's back up.
+
+[`server/README.md`](server/README.md) documents running the backend yourself via Docker
+Compose — that's only relevant if you're contributing to the backend or deliberately want your
+own separate instance instead of the shared one.
 
 ## Using the IDE
 
-1. **Point the app at your backend** — click ⚙️ **Settings** in the toolbar and enter the
-   backend's URL (see **Cloud Backend** above). Only needed once, or whenever the URL changes.
+1. **Point the app at the backend** — click ⚙️ **Settings** in the toolbar and enter the
+   current backend URL (see **Cloud Backend** above). Only needed once, or whenever the URL changes.
 2. **Sign up / log in** — click the login icon in the toolbar and create an account with an email and password. This is what ties your files to you across machines.
 3. **Create or open a file** — `Ctrl+N` for a new file, `Ctrl+O` to open an existing one, or "Open Folder..." to work across a whole project.
 4. **Write and save** — `Ctrl+S` saves locally, same as any editor.

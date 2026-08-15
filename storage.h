@@ -61,6 +61,14 @@ public:
     void resumeAfterTokenRefresh(const QString &idToken);
     void abandonPendingRetries();
 
+    // Fetches the current backend URL from a fixed, permanent discovery
+    // endpoint (a GitHub Gist kept up to date by hand whenever the backend's
+    // real URL changes, e.g. an ngrok restart). Entirely unauthenticated and
+    // unrelated to idToken/backendUrl above -- lets Settings offer a "Fetch
+    // latest" shortcut instead of everyone needing to be told the new URL by
+    // hand. Reports discoveryUrlFetched() or discoveryUrlFetchFailed().
+    void fetchDiscoveryUrl();
+
 private:
     QNetworkAccessManager *networkAccessManager;
     QNetworkRequest newRequest;
@@ -119,6 +127,9 @@ signals:
 
     void backendLoginSucceeded();
     void backendLoginFailed(const QString &errorString);
+
+    void discoveryUrlFetched(const QString &url);
+    void discoveryUrlFetchFailed(const QString &errorString);
 
     // Storage has no access to Authenticator -- this just asks whoever owns
     // both to perform a refresh and report back via resumeAfterTokenRefresh()

@@ -8,8 +8,11 @@
 #include <QDir>
 #include <QDirIterator>
 #include <QStackedWidget>
-#include <QInputDialog>
+#include <QDialog>
+#include <QVBoxLayout>
+#include <QLabel>
 #include <QLineEdit>
+#include <QDialogButtonBox>
 
 
 MainWindow::MainWindow(QWidget *parent)
@@ -429,15 +432,58 @@ void MainWindow::onBackendLoginFailed(const QString &errorString)
 
 void MainWindow::on_actionSettings_triggered()
 {
-    bool ok = false;
-    QString currentUrl = settings.value("backendUrl").toString();
+    QDialog dialog(this);
+    dialog.setWindowTitle("Settings");
+    dialog.setMinimumWidth(440);
 
-    QString newUrl = QInputDialog::getText(this, "Settings", "Backend URL (e.g. an ngrok tunnel):",
-        QLineEdit::Normal, currentUrl, &ok);
+    QVBoxLayout *layout = new QVBoxLayout(&dialog);
 
-    if (!ok)
+    layout -> addWidget(new QLabel("Backend URL (e.g. an ngrok tunnel):"));
+
+    QLineEdit *urlEdit = new QLineEdit(settings.value("backendUrl").toString());
+    layout -> addWidget(urlEdit);
+
+    QPushButton *fetchButton = new QPushButton("Fetch Latest from GitHub");
+    layout -> addWidget(fetchButton);
+
+    QLabel *statusLabel = new QLabel();
+    statusLabel -> setWordWrap(true);
+    layout -> addWidget(statusLabel);
+
+    QDialogButtonBox *buttonBox = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
+    layout -> addWidget(buttonBox);
+
+    // Scoped to this dialog's lifetime via the &dialog context object --
+    // Qt auto-disconnects these the moment dialog goes out of scope below,
+    // so there's nothing left listening to storage's signals afterwards.
+    connect(fetchButton, &QPushButton::clicked, &dialog, [this, &dialog, fetchButton, statusLabel]() {
+        fetchButton -> setEnabled(false);
+        statusLabel -> setText("Fetching...");
+        dialog.adjustSize();
+        storage -> fetchDiscoveryUrl();
+    });
+    connect(storage, &Storage::discoveryUrlFetched, &dialog, [&dialog, urlEdit, fetchButton, statusLabel](const QString &url) {
+        urlEdit -> setText(url);
+        statusLabel -> setText("Fetched the latest URL -- click OK to use it.");
+        fetchButton -> setEnabled(true);
+        // Changing statusLabel's wrapped text doesn't automatically grow the
+        // dialog window on its own -- without this, the new text just
+        // overlaps whatever's below it instead of pushing the window taller.
+        dialog.adjustSize();
+    });
+    connect(storage, &Storage::discoveryUrlFetchFailed, &dialog, [&dialog, fetchButton, statusLabel](const QString &errorString) {
+        statusLabel -> setText("Couldn't fetch the latest URL: " + errorString);
+        fetchButton -> setEnabled(true);
+        dialog.adjustSize();
+    });
+
+    connect(buttonBox, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
+    connect(buttonBox, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+
+    if (dialog.exec() != QDialog::Accepted)
         return;
 
+    QString newUrl = urlEdit -> text().trimmed();
     while (newUrl.endsWith('/'))
         newUrl.chop(1);
 
