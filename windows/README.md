@@ -8,10 +8,10 @@ self-contained package that needs no compiler installed at all, whether
 that's a one-off release you're packaging for others or just wanting your
 own local build to work the same way.
 
-The Windows build of the IDE looks for a compiler at `mingw64/bin/g++.exe`
-next to `IDE.exe` before falling back to whatever `g++` is on `PATH` (see
-`Terminal::runFile()` in `terminal.cpp`). Bundling one here means end users
-can hit Run with no separate compiler install.
+The Windows build of VaultWright looks for a compiler at `mingw64/bin/g++.exe`
+next to `VaultWright.exe` before falling back to whatever `g++` is on `PATH`
+(see `Terminal::runFile()` in `terminal.cpp`). Bundling one here means end
+users can hit Run with no separate compiler install.
 
 ## One-time setup (per machine building a release)
 
@@ -30,8 +30,8 @@ can hit Run with no separate compiler install.
 ## What happens at build time
 
 - `CMakeLists.txt` checks whether `windows/mingw64/` exists. If it does, a
-  post-build step copies it next to the built `IDE.exe`, and it's included
-  in `cmake --install` output too.
+  post-build step copies it next to the built `VaultWright.exe`, and it's
+  included in `cmake --install` output too.
 - If it doesn't exist, the build still works — `Terminal::runFile()` falls
   back to searching `PATH` for `g++`, which is enough for local development
   on a machine that already has MinGW installed some other way. Only a

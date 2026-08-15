@@ -1,0 +1,4 @@
+// Windows resource script -- gives VaultWright.exe its icon (taskbar, Explorer,
+// Alt-Tab). Compiled in automatically by CMake/windres when this file is listed
+// as a source on a WIN32 build; see CMakeLists.txt.
+IDI_ICON1 ICON "../Icons/AppIcon.ico"
