@@ -1,6 +1,7 @@
 #include "mainwindow.h"
 #include "./ui_mainwindow.h"
 #include "syntaxhighlighter.h"
+#include "codeeditor.h"
 #include "terminal.h"
 #include <QCloseEvent>
 #include <QMessageBox>
@@ -13,6 +14,7 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QDialogButtonBox>
+#include <QTextBlock>
 
 
 MainWindow::MainWindow(QWidget *parent)
@@ -221,18 +223,34 @@ void MainWindow::closeTab(int index)
 }
 
 
+void MainWindow::wireModifiedIndicator(QPlainTextEdit *tab)
+{
+    connect(tab -> document(), &QTextDocument::modificationChanged, this, [this, tab](bool modified) {
+        int index = theWorkspace -> indexOf(tab);
+        if (index == -1)
+            return; // tab's been closed since; nothing left to update
+
+        QString title = theWorkspace -> tabText(index);
+        if (title.startsWith("● "))
+            title.remove(0, 2);
+        if (modified)
+            title.prepend("● ");
+
+        theWorkspace -> setTabText(index, title);
+    });
+}
+
+
 void MainWindow::on_actionNew_File_triggered()
 {
-    theWorkspace -> addTab(new QPlainTextEdit(), QString("Tab %0").arg(theWorkspace -> count() + 1));
+    theWorkspace -> addTab(new CodeEditor(), QString("Tab %0").arg(theWorkspace -> count() + 1));
     curr = qobject_cast<QPlainTextEdit*>(theWorkspace -> currentWidget());
     curr -> setProperty("filePath", QVariant(""));
-
-    QFontMetricsF fontMetrics(curr->font());
-    curr->setTabStopDistance(fontMetrics.horizontalAdvance(' ') * 4);
 
     theWorkspace -> setCurrentIndex(theWorkspace -> count() - 1);
 
     new SyntaxHighlighter(curr -> document());
+    wireModifiedIndicator(curr);
 }
 
 
@@ -247,18 +265,17 @@ void MainWindow::on_actionOpen_triggered()
     openFile.open(QIODevice::ReadOnly | QIODevice::Text);
 
     info = QFileInfo(filePath);
-    theWorkspace->addTab(new QPlainTextEdit(), info.fileName());
+    theWorkspace->addTab(new CodeEditor(), info.fileName());
     theWorkspace -> setCurrentIndex(theWorkspace -> count() - 1);
 
     curr = qobject_cast<QPlainTextEdit*>(theWorkspace -> currentWidget());
     curr -> setPlainText(openFile.readAll());
+    curr -> document() -> setModified(false); // loading existing content isn't an edit
 
     curr -> setProperty("filePath", QVariant(filePath));
 
-    QFontMetricsF fontMetrics(curr->font());
-    curr->setTabStopDistance(fontMetrics.horizontalAdvance(' ') * 4);
-
     new SyntaxHighlighter(curr -> document());
+    wireModifiedIndicator(curr);
 
     openFile.close();
 }
@@ -336,7 +353,10 @@ void MainWindow::on_actionSave_triggered()
         info = QFileInfo(filePath);
         theWorkspace -> setTabText(theWorkspace -> currentIndex(), info.fileName());
 
-        return;
+        // Deliberately falls through to the write below instead of
+        // returning here -- this used to return right after picking a
+        // filename, which meant the very first save of a new file renamed
+        // the tab but never actually wrote it to disk.
     }
 
 
@@ -349,6 +369,8 @@ void MainWindow::on_actionSave_triggered()
 
     saveFile.flush();
     saveFile.close();
+
+    curr -> document() -> setModified(false);
 }
 
 
@@ -384,6 +406,74 @@ void MainWindow::on_actionPaste_triggered()
 {
     if (theWorkspace -> currentIndex() != -1)
         qobject_cast<QPlainTextEdit*>(theWorkspace -> currentWidget()) -> paste();
+}
+
+
+void MainWindow::on_actionToggle_Comment_triggered()
+{
+    if (theWorkspace -> currentIndex() == -1)
+        return;
+
+    QPlainTextEdit *editor = qobject_cast<QPlainTextEdit*>(theWorkspace -> currentWidget());
+    QTextDocument *doc = editor -> document();
+    QTextCursor cursor = editor -> textCursor();
+
+    QTextCursor startCursor(doc);
+    startCursor.setPosition(cursor.selectionStart());
+    QTextCursor endCursor(doc);
+    endCursor.setPosition(cursor.selectionEnd());
+
+    int firstBlock = startCursor.blockNumber();
+    int lastBlock = endCursor.blockNumber();
+
+    // A selection ending exactly at the start of a line shouldn't pull that
+    // line into the toggle -- matches how most editors treat a trailing
+    // newline caught by a drag-selection.
+    if (lastBlock > firstBlock && endCursor.atBlockStart())
+        --lastBlock;
+
+    // If every non-blank line in range is already commented, this toggles
+    // to uncommented; otherwise it comments every line that isn't already.
+    bool allCommented = true;
+    for (int b = firstBlock; b <= lastBlock; ++b)
+    {
+        QString text = doc -> findBlockByNumber(b).text();
+        if (!text.trimmed().isEmpty() && !text.trimmed().startsWith("//"))
+        {
+            allCommented = false;
+            break;
+        }
+    }
+
+    cursor.beginEditBlock();
+    for (int b = firstBlock; b <= lastBlock; ++b)
+    {
+        QTextBlock block = doc -> findBlockByNumber(b);
+        QString text = block.text();
+        if (text.trimmed().isEmpty())
+            continue;
+
+        int firstNonSpace = 0;
+        while (firstNonSpace < text.length() && (text[firstNonSpace] == ' ' || text[firstNonSpace] == '\t'))
+            ++firstNonSpace;
+
+        QTextCursor lineCursor(block);
+
+        if (allCommented)
+        {
+            int slashPos = text.indexOf("//", firstNonSpace);
+            int removeLength = (text.mid(slashPos + 2, 1) == " ") ? 3 : 2;
+            lineCursor.setPosition(block.position() + slashPos);
+            lineCursor.setPosition(block.position() + slashPos + removeLength, QTextCursor::KeepAnchor);
+            lineCursor.removeSelectedText();
+        }
+        else
+        {
+            lineCursor.setPosition(block.position() + firstNonSpace);
+            lineCursor.insertText("// ");
+        }
+    }
+    cursor.endEditBlock();
 }
 
 
@@ -524,18 +614,17 @@ void MainWindow::localFilesItemClicked(QTreeWidgetItem* item)
 
     if (openFile.open(QIODevice::ReadOnly | QIODevice::Text))
     {
-        theWorkspace -> addTab(new QPlainTextEdit(), info.fileName());
+        theWorkspace -> addTab(new CodeEditor(), info.fileName());
         theWorkspace -> setCurrentIndex(theWorkspace -> count() - 1);
 
         curr = qobject_cast<QPlainTextEdit*>(theWorkspace -> currentWidget());
         curr -> setPlainText(openFile.readAll());
+        curr -> document() -> setModified(false); // loading existing content isn't an edit
 
         curr -> setProperty("filePath", QVariant(filePath));
 
-        QFontMetricsF fontMetrics(curr->font());
-        curr->setTabStopDistance(fontMetrics.horizontalAdvance(' ') * 4);
-
         new SyntaxHighlighter(curr -> document());
+        wireModifiedIndicator(curr);
 
         openFile.close();
     }
@@ -685,7 +774,7 @@ void MainWindow::onSessionExpired()
 
 void MainWindow::cloudFilesItemClicked(QTreeWidgetItem *item)
 {
-    theWorkspace -> addTab(new QPlainTextEdit(), item->text(0));
+    theWorkspace -> addTab(new CodeEditor(), item->text(0));
     theWorkspace -> setCurrentIndex(theWorkspace -> count() - 1);
 
     filePath = item -> data(0, Qt::UserRole).toString();
@@ -698,6 +787,8 @@ void MainWindow::cloudFilesItemClicked(QTreeWidgetItem *item)
     // tab apart from a tab backed by a real local file.
     curr -> setProperty("isCloudFile", true);
     curr -> setProperty("cloudFileName", item -> text(0));
+
+    wireModifiedIndicator(curr);
 
     // Pass this exact tab through, rather than relying on "whichever tab is
     // active" when the (asynchronous) download eventually completes -- the
@@ -712,9 +803,7 @@ void MainWindow::onDownloadFile(const QByteArray &response, QObject *targetTab)
         return; // the tab this download was for has since been closed
 
     tab -> setPlainText(response);
-
-    QFontMetricsF fontMetrics(tab->font());
-    tab->setTabStopDistance(fontMetrics.horizontalAdvance(' ') * 4);
+    tab -> document() -> setModified(false); // loading downloaded content isn't an edit
 
     new SyntaxHighlighter(tab -> document());
 }

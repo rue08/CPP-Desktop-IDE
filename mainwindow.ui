@@ -49,6 +49,8 @@
     <addaction name="actionCut"/>
     <addaction name="actionCopy"/>
     <addaction name="actionPaste"/>
+    <addaction name="separator"/>
+    <addaction name="actionToggle_Comment"/>
    </widget>
    <addaction name="menuFile"/>
    <addaction name="menuEdit"/>
@@ -146,6 +148,14 @@
    </property>
    <property name="text">
     <string>Paste</string>
+   </property>
+  </action>
+  <action name="actionToggle_Comment">
+   <property name="text">
+    <string>Toggle Comment</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+/</string>
    </property>
   </action>
   <action name="actionThe_Vault">

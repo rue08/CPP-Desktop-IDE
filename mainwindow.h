@@ -86,7 +86,14 @@ private slots:
     void onBackendLoginFailed(const QString &errorString);
     void on_actionSettings_triggered();
 
+    void on_actionToggle_Comment_triggered();
+
 private:
+    // Marks `tab`'s title with a "● " prefix while its document has unsaved
+    // changes, clearing it again once saved -- looked up by pointer rather
+    // than a captured index since tabs are reorderable (setMovable(true)).
+    void wireModifiedIndicator(QPlainTextEdit *tab);
+
     Ui::MainWindow *ui;
     QStackedWidget *localFilesStack;
     QStackedWidget *cloudFilesStack;
