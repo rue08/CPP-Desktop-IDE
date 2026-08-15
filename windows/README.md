@@ -2,7 +2,7 @@
 
 **Already have a C++ compiler on `PATH`** (an existing MinGW/g++ install)?
 You don't need anything on this page — just build from source per the main
-[README](../README.md#option-2-build-from-source) and it'll be picked up
+[README](../README.md#build-from-source) and it'll be picked up
 automatically. This doc is only relevant if you want your build to be a
 self-contained package that needs no compiler installed at all, whether
 that's a one-off release you're packaging for others or just wanting your
