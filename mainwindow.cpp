@@ -1,7 +1,6 @@
 #include "mainwindow.h"
 #include "./ui_mainwindow.h"
-#include "syntaxhighlighter.h"
-#include "codeeditor.h"
+#include "monacoeditor.h"
 #include "terminal.h"
 #include <QCloseEvent>
 #include <QMessageBox>
@@ -14,7 +13,6 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QDialogButtonBox>
-#include <QTextBlock>
 
 
 MainWindow::MainWindow(QWidget *parent)
@@ -135,7 +133,7 @@ void MainWindow::on_actionThe_Vault_triggered()
 
 void MainWindow::closeTab(int index)
 {
-    curr = qobject_cast<QPlainTextEdit*>(theWorkspace -> widget(index));
+    curr = qobject_cast<MonacoEditor*>(theWorkspace -> widget(index));
 
     QMessageBox msgBox(this);
     msgBox.setIcon(QMessageBox::Warning);
@@ -223,9 +221,9 @@ void MainWindow::closeTab(int index)
 }
 
 
-void MainWindow::wireModifiedIndicator(QPlainTextEdit *tab)
+void MainWindow::wireModifiedIndicator(MonacoEditor *tab)
 {
-    connect(tab -> document(), &QTextDocument::modificationChanged, this, [this, tab](bool modified) {
+    connect(tab, &MonacoEditor::modifiedChanged, this, [this, tab](bool modified) {
         int index = theWorkspace -> indexOf(tab);
         if (index == -1)
             return; // tab's been closed since; nothing left to update
@@ -243,13 +241,12 @@ void MainWindow::wireModifiedIndicator(QPlainTextEdit *tab)
 
 void MainWindow::on_actionNew_File_triggered()
 {
-    theWorkspace -> addTab(new CodeEditor(), QString("Tab %0").arg(theWorkspace -> count() + 1));
-    curr = qobject_cast<QPlainTextEdit*>(theWorkspace -> currentWidget());
+    theWorkspace -> addTab(new MonacoEditor(), QString("Tab %0").arg(theWorkspace -> count() + 1));
+    curr = qobject_cast<MonacoEditor*>(theWorkspace -> currentWidget());
     curr -> setProperty("filePath", QVariant(""));
 
     theWorkspace -> setCurrentIndex(theWorkspace -> count() - 1);
 
-    new SyntaxHighlighter(curr -> document());
     wireModifiedIndicator(curr);
 }
 
@@ -265,16 +262,14 @@ void MainWindow::on_actionOpen_triggered()
     openFile.open(QIODevice::ReadOnly | QIODevice::Text);
 
     info = QFileInfo(filePath);
-    theWorkspace->addTab(new CodeEditor(), info.fileName());
+    theWorkspace->addTab(new MonacoEditor(), info.fileName());
     theWorkspace -> setCurrentIndex(theWorkspace -> count() - 1);
 
-    curr = qobject_cast<QPlainTextEdit*>(theWorkspace -> currentWidget());
-    curr -> setPlainText(openFile.readAll());
-    curr -> document() -> setModified(false); // loading existing content isn't an edit
+    curr = qobject_cast<MonacoEditor*>(theWorkspace -> currentWidget());
+    curr -> setPlainText(openFile.readAll()); // resets the modified flag internally -- loading existing content isn't an edit
 
     curr -> setProperty("filePath", QVariant(filePath));
 
-    new SyntaxHighlighter(curr -> document());
     wireModifiedIndicator(curr);
 
     openFile.close();
@@ -321,7 +316,7 @@ void MainWindow::on_actionSave_triggered()
     if (theWorkspace -> currentIndex() == -1)
         return;
 
-    curr = qobject_cast<QPlainTextEdit*>(theWorkspace -> currentWidget());
+    curr = qobject_cast<MonacoEditor*>(theWorkspace -> currentWidget());
 
     if (curr -> toPlainText().isEmpty())
     {
@@ -370,42 +365,42 @@ void MainWindow::on_actionSave_triggered()
     saveFile.flush();
     saveFile.close();
 
-    curr -> document() -> setModified(false);
+    curr -> setModified(false);
 }
 
 
 void MainWindow::on_actionUndo_triggered()
 {
     if (theWorkspace -> currentIndex() != -1)
-        qobject_cast<QPlainTextEdit*>(theWorkspace -> currentWidget()) -> undo();
+        qobject_cast<MonacoEditor*>(theWorkspace -> currentWidget()) -> undo();
 }
 
 
 void MainWindow::on_actionRedo_triggered()
 {
     if (theWorkspace -> currentIndex() != -1)
-        qobject_cast<QPlainTextEdit*>(theWorkspace -> currentWidget()) -> redo();
+        qobject_cast<MonacoEditor*>(theWorkspace -> currentWidget()) -> redo();
 }
 
 
 void MainWindow::on_actionCut_triggered()
 {
     if (theWorkspace -> currentIndex() != -1)
-        qobject_cast<QPlainTextEdit*>(theWorkspace -> currentWidget()) -> cut();
+        qobject_cast<MonacoEditor*>(theWorkspace -> currentWidget()) -> cut();
 }
 
 
 void MainWindow::on_actionCopy_triggered()
 {
     if (theWorkspace -> currentIndex() != -1)
-        qobject_cast<QPlainTextEdit*>(theWorkspace -> currentWidget()) -> copy();
+        qobject_cast<MonacoEditor*>(theWorkspace -> currentWidget()) -> copy();
 }
 
 
 void MainWindow::on_actionPaste_triggered()
 {
     if (theWorkspace -> currentIndex() != -1)
-        qobject_cast<QPlainTextEdit*>(theWorkspace -> currentWidget()) -> paste();
+        qobject_cast<MonacoEditor*>(theWorkspace -> currentWidget()) -> paste();
 }
 
 
@@ -414,66 +409,14 @@ void MainWindow::on_actionToggle_Comment_triggered()
     if (theWorkspace -> currentIndex() == -1)
         return;
 
-    QPlainTextEdit *editor = qobject_cast<QPlainTextEdit*>(theWorkspace -> currentWidget());
-    QTextDocument *doc = editor -> document();
-    QTextCursor cursor = editor -> textCursor();
-
-    QTextCursor startCursor(doc);
-    startCursor.setPosition(cursor.selectionStart());
-    QTextCursor endCursor(doc);
-    endCursor.setPosition(cursor.selectionEnd());
-
-    int firstBlock = startCursor.blockNumber();
-    int lastBlock = endCursor.blockNumber();
-
-    // A selection ending exactly at the start of a line shouldn't pull that
-    // line into the toggle -- matches how most editors treat a trailing
-    // newline caught by a drag-selection.
-    if (lastBlock > firstBlock && endCursor.atBlockStart())
-        --lastBlock;
-
-    // If every non-blank line in range is already commented, this toggles
-    // to uncommented; otherwise it comments every line that isn't already.
-    bool allCommented = true;
-    for (int b = firstBlock; b <= lastBlock; ++b)
-    {
-        QString text = doc -> findBlockByNumber(b).text();
-        if (!text.trimmed().isEmpty() && !text.trimmed().startsWith("//"))
-        {
-            allCommented = false;
-            break;
-        }
-    }
-
-    cursor.beginEditBlock();
-    for (int b = firstBlock; b <= lastBlock; ++b)
-    {
-        QTextBlock block = doc -> findBlockByNumber(b);
-        QString text = block.text();
-        if (text.trimmed().isEmpty())
-            continue;
-
-        int firstNonSpace = 0;
-        while (firstNonSpace < text.length() && (text[firstNonSpace] == ' ' || text[firstNonSpace] == '\t'))
-            ++firstNonSpace;
-
-        QTextCursor lineCursor(block);
-
-        if (allCommented)
-        {
-            int slashPos = text.indexOf("//", firstNonSpace);
-            int removeLength = (text.mid(slashPos + 2, 1) == " ") ? 3 : 2;
-            lineCursor.setPosition(block.position() + slashPos);
-            lineCursor.setPosition(block.position() + slashPos + removeLength, QTextCursor::KeepAnchor);
-            lineCursor.removeSelectedText();
-        }
-        else
-        {
-            lineCursor.setPosition(block.position() + firstNonSpace);
-            lineCursor.insertText("// ");
-        }
-    }
-    cursor.endEditBlock();
+    // Monaco's own comment-toggle command replaces the hand-rolled
+    // line-comment logic this used to have -- it's language-aware and
+    // already knows how to toggle a selection the same way VS Code does.
+    // This action has no shortcut of its own anymore (see mainwindow.ui) --
+    // Ctrl+/ is left to Monaco's own built-in binding for the same command
+    // when the editor has focus, rather than having both fire for the same
+    // keypress. This slot is now only reachable via the menu/toolbar entry.
+    qobject_cast<MonacoEditor*>(theWorkspace -> currentWidget()) -> toggleCommentSelection();
 }
 
 
@@ -614,16 +557,14 @@ void MainWindow::localFilesItemClicked(QTreeWidgetItem* item)
 
     if (openFile.open(QIODevice::ReadOnly | QIODevice::Text))
     {
-        theWorkspace -> addTab(new CodeEditor(), info.fileName());
+        theWorkspace -> addTab(new MonacoEditor(), info.fileName());
         theWorkspace -> setCurrentIndex(theWorkspace -> count() - 1);
 
-        curr = qobject_cast<QPlainTextEdit*>(theWorkspace -> currentWidget());
-        curr -> setPlainText(openFile.readAll());
-        curr -> document() -> setModified(false); // loading existing content isn't an edit
+        curr = qobject_cast<MonacoEditor*>(theWorkspace -> currentWidget());
+        curr -> setPlainText(openFile.readAll()); // resets the modified flag internally -- loading existing content isn't an edit
 
         curr -> setProperty("filePath", QVariant(filePath));
 
-        new SyntaxHighlighter(curr -> document());
         wireModifiedIndicator(curr);
 
         openFile.close();
@@ -641,7 +582,7 @@ void MainWindow::closeEvent(QCloseEvent *event)
 
 void MainWindow::on_actionUpload_triggered()
 {
-    curr = qobject_cast<QPlainTextEdit*>(theWorkspace -> currentWidget());
+    curr = qobject_cast<MonacoEditor*>(theWorkspace -> currentWidget());
     QList<QTreeWidgetItem*> ls = localFiles -> selectedItems();
     if (!curr && ls.size() == 0)
         return;
@@ -722,7 +663,7 @@ void MainWindow::onDownloadFailed(const QString &errorString, QObject *targetTab
     // -- close it instead of leaving a dead placeholder tab behind. It may
     // already be gone (user closed it while the download was in flight), in
     // which case targetTab is null and there's nothing to clean up.
-    QPlainTextEdit *tab = qobject_cast<QPlainTextEdit*>(targetTab);
+    MonacoEditor *tab = qobject_cast<MonacoEditor*>(targetTab);
     if (tab)
     {
         int index = theWorkspace -> indexOf(tab);
@@ -774,12 +715,12 @@ void MainWindow::onSessionExpired()
 
 void MainWindow::cloudFilesItemClicked(QTreeWidgetItem *item)
 {
-    theWorkspace -> addTab(new CodeEditor(), item->text(0));
+    theWorkspace -> addTab(new MonacoEditor(), item->text(0));
     theWorkspace -> setCurrentIndex(theWorkspace -> count() - 1);
 
     filePath = item -> data(0, Qt::UserRole).toString();
 
-    curr = qobject_cast<QPlainTextEdit*>(theWorkspace -> currentWidget());
+    curr = qobject_cast<MonacoEditor*>(theWorkspace -> currentWidget());
     curr -> setProperty("filePath", QVariant(filePath));
 
     // filePath here is the backend's numeric file id, not a real path --
@@ -798,14 +739,11 @@ void MainWindow::cloudFilesItemClicked(QTreeWidgetItem *item)
 
 void MainWindow::onDownloadFile(const QByteArray &response, QObject *targetTab)
 {
-    QPlainTextEdit *tab = qobject_cast<QPlainTextEdit*>(targetTab);
+    MonacoEditor *tab = qobject_cast<MonacoEditor*>(targetTab);
     if (!tab)
         return; // the tab this download was for has since been closed
 
-    tab -> setPlainText(response);
-    tab -> document() -> setModified(false); // loading downloaded content isn't an edit
-
-    new SyntaxHighlighter(tab -> document());
+    tab -> setPlainText(response); // resets the modified flag internally -- loading downloaded content isn't an edit
 }
 
 

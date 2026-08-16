@@ -11,8 +11,8 @@ set(CMAKE_AUTORCC ON)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-find_package(QT NAMES Qt6 Qt5 REQUIRED COMPONENTS Widgets Network)
-find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Widgets Network)
+find_package(QT NAMES Qt6 Qt5 REQUIRED COMPONENTS Widgets Network WebEngineWidgets WebChannel)
+find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Widgets Network WebEngineWidgets WebChannel)
 find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Core)
 
 set(PROJECT_SOURCES
@@ -39,8 +39,7 @@ if(${QT_VERSION_MAJOR} GREATER_EQUAL 6)
         MANUAL_FINALIZATION
         ${PROJECT_SOURCES}
         resources.qrc
-        syntaxhighlighter.h syntaxhighlighter.cpp
-        codeeditor.h codeeditor.cpp
+        monacoeditor.h monacoeditor.cpp
         terminal.h terminal.cpp
         loginwindow.h loginwindow.cpp loginwindow.ui
         authenticator.h authenticator.cpp
@@ -69,7 +68,9 @@ endif()
 
 target_link_libraries(VaultWright PRIVATE
     Qt${QT_VERSION_MAJOR}::Widgets
-    Qt${QT_VERSION_MAJOR}::Network)
+    Qt${QT_VERSION_MAJOR}::Network
+    Qt${QT_VERSION_MAJOR}::WebEngineWidgets
+    Qt${QT_VERSION_MAJOR}::WebChannel)
 target_link_libraries(VaultWright PRIVATE Qt${QT_VERSION_MAJOR}::Core)
 
 # Qt for iOS sets MACOSX_BUNDLE_GUI_IDENTIFIER automatically since Qt 6.1.
@@ -114,6 +115,27 @@ if(WIN32)
                         "See windows/README.md to bundle a toolchain before packaging a release.")
     endif()
 endif()
+
+# Copy the embedded Monaco Editor -- the tracked bridge page (monaco-host/,
+# see MonacoEditor::MonacoEditor()) plus the vendored Monaco build -- next to
+# the built binary as monaco/. The vendored build (third_party/monaco/vs/)
+# is gitignored (too large for git, same reasoning as windows/mingw64/); run
+# third_party/fetch-monaco.sh once per machine to populate it. Missing it is
+# a hard error, unlike the optional MinGW bundle above, since there's no
+# fallback editor path once MonacoEditor is what every workspace tab uses.
+set(MONACO_VENDOR_DIR "${CMAKE_SOURCE_DIR}/third_party/monaco/vs")
+if(NOT EXISTS "${MONACO_VENDOR_DIR}")
+    message(FATAL_ERROR "third_party/monaco/vs/ not found -- run third_party/fetch-monaco.sh first.")
+endif()
+add_custom_command(TARGET VaultWright POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+            "${CMAKE_SOURCE_DIR}/monaco-host" "$<TARGET_FILE_DIR:VaultWright>/monaco"
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+            "${MONACO_VENDOR_DIR}" "$<TARGET_FILE_DIR:VaultWright>/monaco/vs"
+    COMMENT "Copying Monaco Editor (bridge page + vendored build) next to VaultWright"
+)
+install(DIRECTORY "${CMAKE_SOURCE_DIR}/monaco-host/" DESTINATION "${CMAKE_INSTALL_BINDIR}/monaco")
+install(DIRECTORY "${MONACO_VENDOR_DIR}/" DESTINATION "${CMAKE_INSTALL_BINDIR}/monaco/vs")
 
 if(QT_VERSION_MAJOR EQUAL 6)
     qt_finalize_executable(VaultWright)

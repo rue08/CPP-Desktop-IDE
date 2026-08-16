@@ -28,3 +28,9 @@ build/
 # Bundled Windows MinGW-w64 toolchain -- too large for git, fetched/placed
 # manually per windows/README.md, not tracked as source.
 windows/mingw64/
+
+# Vendored Monaco Editor build -- too large for git, fetched via
+# third_party/fetch-monaco.sh, not tracked as source. (monaco-host/, the
+# small bridge page that loads it, *is* tracked -- only this vendored part
+# is gitignored.)
+third_party/monaco/

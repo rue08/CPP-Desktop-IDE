@@ -6,7 +6,7 @@ A lightweight, self-contained **C++ IDE** built to solve a simple problem: your 
 Cloud backup has made personal files effortless to access and sync across machines. Raw source code, in a real development environment, has never had that same convenience. This project closes that gap — sign up, and your files are available from any machine you install the IDE on.
 
 ## Features
-- A custom C++ editor built on Qt, with syntax highlighting.
+- An embedded [Monaco Editor](https://microsoft.github.io/monaco-editor/) (VS Code's editor core) for every workspace tab — real find/replace, multi-cursor editing, code folding, a minimap, and language-aware syntax highlighting.
 - One-click compile & run, driving the `g++` toolchain directly from the editor.
 - A cloud-backed file system — save a file locally, upload it, and pull it down again from any other machine you're signed into.
 - Asynchronous upload/download with real-time status feedback.
@@ -14,7 +14,8 @@ Cloud backup has made personal files effortless to access and sync across machin
 
 ## Tech Stack
 - **Language**: C++
-- **Framework**: Qt (Widgets + Network)
+- **Framework**: Qt (Widgets + Network + WebEngine + WebChannel)
+- **Editor**: [Monaco Editor](https://microsoft.github.io/monaco-editor/), embedded via `QWebEngineView`
 - **Auth**: Firebase Authentication
 - **File storage**: self-hosted [Node.js + PostgreSQL backend](server/) (`server/`) — Firebase
   ID tokens in, files out; no Firestore/Cloud Storage involved
@@ -36,9 +37,20 @@ Windows) — see [`windows/README.md`](windows/README.md) if you'd rather bundle
 alongside the build instead of relying on `PATH`.
 
 **Prerequisites**
-- [Qt](https://www.qt.io/download-qt-installer) (Qt 6 recommended, Qt 5 also supported) with the **Widgets** and **Network** modules
+- [Qt](https://www.qt.io/download-qt-installer) (Qt 6 recommended, Qt 5 also supported) with the
+  **Widgets**, **Network**, **WebEngine**, **WebChannel**, and **Positioning** modules — none of
+  the last three are installed by default, so add them explicitly in the Qt Maintenance Tool /
+  online installer's component list. Two gotchas that aren't obvious from the installer UI:
+  - **WebEngine isn't built for every Qt patch release** — under Extensions → Qt WebEngine, only
+    specific patch versions are offered (e.g. 6.10.3, not 6.10.1). If your installed Qt patch
+    version isn't one of them, install one that is (same minor version, e.g. 6.10.x) rather than
+    trying to force WebEngine onto a version it wasn't built for.
+  - **Qt Positioning is a WebEngine dependency**, not an optional extra — it's under the base Qt
+    version's own "Additional Libraries" list (not under Extensions), and `Qt6WebEngineCore`
+    won't configure without it.
 - CMake 3.16+
 - A C++17 compiler (`g++` or Clang) on `PATH`
+- Node.js + `npm` on `PATH` — only needed once, to vendor the editor (see step 2 below)
 - [Qt Creator](https://www.qt.io/product/development-tools) — optional, but the simplest way to get Qt and build in one step
 
 **Build**
@@ -49,7 +61,12 @@ alongside the build instead of relying on `PATH`.
    cd CPP-Desktop-IDE
    ```
 
-2. Build it, either way:
+2. Vendor the embedded editor (one-time; see [`third_party/README.md`](third_party/README.md)):
+   ```bash
+   third_party/fetch-monaco.sh
+   ```
+
+3. Build it, either way:
 
    **Using Qt Creator** (easiest)
    - File → Open Project → select `CMakeLists.txt`
@@ -57,7 +74,7 @@ alongside the build instead of relying on `PATH`.
 
    **From the command line**
    ```bash
-   cmake -B build -DCMAKE_PREFIX_PATH=<path-to-your-Qt-install>   # e.g. ~/Qt/6.10.1/macos
+   cmake -B build -DCMAKE_PREFIX_PATH=<path-to-your-Qt-install>   # e.g. ~/Qt/6.10.3/macos
    cmake --build build
    ```
    On Windows, pass the generator explicitly and run this from the Qt-provided MinGW command
@@ -69,7 +86,7 @@ alongside the build instead of relying on `PATH`.
    cmake --build build
    ```
 
-3. Launch the built `VaultWright` binary.
+4. Launch the built `VaultWright` binary.
 
 ## Cloud Backend
 

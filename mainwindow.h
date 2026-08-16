@@ -7,12 +7,12 @@
 #include <QLabel>
 #include <QTreeWidget>
 #include <QVariant>
-#include <QPlainTextEdit>
 #include <QFileDialog>
 #include <QStackedWidget>
 #include <QSet>
 #include "storage.h"
 #include "loginwindow.h"
+#include "monacoeditor.h"
 
 QT_BEGIN_NAMESPACE
 namespace Ui {
@@ -28,7 +28,7 @@ public:
     MainWindow(QWidget *parent = nullptr);
     ~MainWindow();
     QTabWidget *theWorkspace;
-    QPlainTextEdit* curr;
+    MonacoEditor* curr;
 
 private slots:
     void closeTab(int index);
@@ -92,7 +92,7 @@ private:
     // Marks `tab`'s title with a "● " prefix while its document has unsaved
     // changes, clearing it again once saved -- looked up by pointer rather
     // than a captured index since tabs are reorderable (setMovable(true)).
-    void wireModifiedIndicator(QPlainTextEdit *tab);
+    void wireModifiedIndicator(MonacoEditor *tab);
 
     Ui::MainWindow *ui;
     QStackedWidget *localFilesStack;

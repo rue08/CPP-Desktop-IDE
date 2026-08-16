@@ -1,0 +1,129 @@
+<!--
+  Host page for the embedded Monaco Editor (see monacoeditor.h/.cpp).
+
+  Loaded from disk via QWebEngineView::setUrl(QUrl::fromLocalFile(...)) --
+  never shipped over the network. Sits next to vs/ (the vendored Monaco AMD
+  build, fetched by third_party/fetch-monaco.sh and copied here at build
+  time by CMakeLists.txt) in the app's output directory.
+
+  Talks to C++ over QWebChannel via a single object, "bridge"
+  (MonacoBridge, registered by MonacoEditor's constructor):
+    JS -> C++ : bridge.contentChanged(text), bridge.editorReady(),
+                bridge.fontSizeChanged(size)
+    C++ -> JS : bridge.loadContent(text), bridge.triggerAction(actionId)
+
+  Font size starts from the "fontSize" URL query param (set by MonacoEditor's
+  constructor from QSettings -- see monacoeditor.cpp) rather than pushed in
+  after load like content is, so Monaco's very first paint is already at the
+  right size. Every Cmd/Ctrl +/-/0 change reports back via
+  bridge.fontSizeChanged() so MonacoEditor can persist it for next time.
+
+  loadContent() (used for opening/downloading a file, i.e. "load", not
+  "edit") is wrapped in suppressingFlush below so the setValue() it causes
+  doesn't loop back through contentChanged and mark the tab as modified --
+  Monaco's onDidChangeModelContent fires synchronously within setValue(),
+  so bracketing it with the flag is race-free (JS is single-threaded).
+-->
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  html, body, #container { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; }
+  /* Matches Monaco's vs-dark background so there's no flash of white while
+     the AMD loader and QWebChannel handshake are still in flight. */
+  body { background: #1e1e1e; }
+</style>
+</head>
+<body>
+<div id="container"></div>
+
+<script src="qrc:///qtwebchannel/qwebchannel.js"></script>
+<script src="vs/loader.js"></script>
+<script>
+  var bridge = null;
+  var editor = null;
+  // Guards against feeding editor.setValue() a value it already has --
+  // Monaco still fires onDidChangeModelContent (as a flush) on a no-op
+  // setValue, which is harmless, but skipping it avoids the round-trip.
+  var suppressingFlush = false;
+
+  function wireBridge(channel) {
+    bridge = channel.objects.bridge;
+
+    bridge.loadContent.connect(function(text) {
+      if (!editor) return;
+      suppressingFlush = true;
+      editor.setValue(text);
+      suppressingFlush = false;
+    });
+
+    bridge.triggerAction.connect(function(actionId) {
+      if (!editor) return;
+      editor.trigger("host", actionId, null);
+      editor.focus();
+    });
+  }
+
+  var DEFAULT_FONT_SIZE = 14;
+  var MIN_FONT_SIZE = 8;
+  var MAX_FONT_SIZE = 32;
+
+  var requestedFontSize = parseInt(new URLSearchParams(window.location.search).get("fontSize"), 10);
+  var initialFontSize = isNaN(requestedFontSize)
+    ? DEFAULT_FONT_SIZE
+    : Math.max(MIN_FONT_SIZE, Math.min(MAX_FONT_SIZE, requestedFontSize));
+  var currentFontSize = initialFontSize;
+
+  function setFontSize(size) {
+    currentFontSize = Math.max(MIN_FONT_SIZE, Math.min(MAX_FONT_SIZE, size));
+    editor.updateOptions({ fontSize: currentFontSize });
+    bridge.fontSizeChanged(currentFontSize);
+  }
+
+  function initMonaco() {
+    require.config({ paths: { vs: "vs" } });
+    require(["vs/editor/editor.main"], function() {
+      editor = monaco.editor.create(document.getElementById("container"), {
+        value: "",
+        language: "cpp",
+        theme: "vs-dark",
+        automaticLayout: true,
+        fontSize: initialFontSize,
+        fontFamily: "Menlo, Consolas, 'Courier New', monospace",
+      });
+
+      editor.onDidChangeModelContent(function() {
+        if (suppressingFlush) return;
+        bridge.contentChanged(editor.getValue());
+      });
+
+      // Cmd+=/Cmd+- on macOS, Ctrl+=/Ctrl+- everywhere else -- monaco.KeyMod.CtrlCmd
+      // already resolves to whichever modifier is native per platform, so there's no
+      // manual OS branching needed here. Bound on both the unshifted "=" (the same
+      // physical key as "+" on most keyboards) and the shifted "+" so it works
+      // regardless of whether the browser/OS reports the shift state.
+      editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Equal, function() {
+        setFontSize(currentFontSize + 1);
+      });
+      editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.Equal, function() {
+        setFontSize(currentFontSize + 1);
+      });
+      editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Minus, function() {
+        setFontSize(currentFontSize - 1);
+      });
+      editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Digit0, function() {
+        setFontSize(DEFAULT_FONT_SIZE);
+      });
+
+      bridge.editorReady();
+    });
+  }
+
+  new QWebChannel(qt.webChannelTransport, function(channel) {
+    wireBridge(channel);
+    initMonaco();
+  });
+</script>
+</body>
+</html>

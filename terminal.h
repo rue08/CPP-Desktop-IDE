@@ -5,7 +5,6 @@
 #include <QSysInfo>
 #include <QFileInfo>
 #include <QWidget>
-#include <QPlainTextEdit>
 
 class MainWindow; // Forward declaration
 

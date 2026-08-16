@@ -5,6 +5,11 @@
 
 int main(int argc, char *argv[])
 {
+    // Recommended by Qt WebEngine before QApplication is constructed --
+    // MonacoEditor embeds a QWebEngineView, and Chromium's compositor needs
+    // GL contexts shared across windows/widgets to render correctly.
+    QApplication::setAttribute(Qt::AA_ShareOpenGLContexts);
+
     QApplication a(argc, argv);
 
     // Covers the taskbar/Alt-Tab/title-bar icon on Windows and Linux, and a

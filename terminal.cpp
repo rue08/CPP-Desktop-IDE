@@ -1,5 +1,6 @@
 #include "terminal.h"
 #include "mainwindow.h"
+#include "monacoeditor.h"
 #include <QCoreApplication>
 #include <QDir>
 #include <QStandardPaths>
@@ -120,7 +121,7 @@ void Terminal::runFile()
 
 void Terminal::getFileName()
 {
-    mainWindow -> curr = qobject_cast<QPlainTextEdit*>(mainWindow -> theWorkspace -> currentWidget());
+    mainWindow -> curr = qobject_cast<MonacoEditor*>(mainWindow -> theWorkspace -> currentWidget());
     path = mainWindow -> curr -> property("filePath").toString();
     QFileInfo fi(path);
     name = fi.fileName();

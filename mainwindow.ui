@@ -154,9 +154,6 @@
    <property name="text">
     <string>Toggle Comment</string>
    </property>
-   <property name="shortcut">
-    <string>Ctrl+/</string>
-   </property>
   </action>
   <action name="actionThe_Vault">
    <property name="enabled">
