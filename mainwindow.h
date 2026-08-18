@@ -6,6 +6,7 @@
 #include <QSettings>
 #include <QLabel>
 #include <QTreeWidget>
+#include <QIcon>
 #include <QVariant>
 #include <QFileDialog>
 #include <QStackedWidget>
@@ -34,6 +35,10 @@ private slots:
     void closeTab(int index);
 
     void on_actionNew_File_triggered();
+
+    void on_actionNew_Text_File_triggered();
+
+    void on_actionNew_Markdown_File_triggered();
 
     void on_actionThe_Vault_triggered();
 
@@ -93,6 +98,19 @@ private:
     // changes, clearing it again once saved -- looked up by pointer rather
     // than a captured index since tabs are reorderable (setMovable(true)).
     void wireModifiedIndicator(MonacoEditor *tab);
+
+    // Shared by the New File / New Text File / New Markdown File actions --
+    // opens a blank tab titled "<titlePrefix> <n>[.defaultExtension]" and
+    // tags it with the extension Save-As should fall back to if the user
+    // saves without typing one of its own (see on_actionSave_triggered()).
+    void newFileTab(const QString &titlePrefix, const QString &defaultExtension);
+
+    // Picks the file-tree icon for a given file name by its extension --
+    // shared between the local "Open Folder" tree and the cloud files tree
+    // so both classify extensions the same way. Falls back to a null QIcon
+    // (no icon shown) for anything outside the IDE's recognized C++/docs
+    // extensions.
+    QIcon iconForFileName(const QString &fileName);
 
     Ui::MainWindow *ui;
     QStackedWidget *localFilesStack;

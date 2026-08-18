@@ -221,6 +221,37 @@ void MainWindow::closeTab(int index)
 }
 
 
+QIcon MainWindow::iconForFileName(const QString &fileName)
+{
+    // Extensions this C++ IDE actually recognizes -- C++ source/header
+    // variants, plus the docs commonly kept alongside C++ code. Anything
+    // else falls through to a null QIcon (no icon shown), same as before.
+    //
+    // Icons are pulled from VS Code's own default "Seti" icon theme
+    // (microsoft/vscode, extensions/theme-seti -- MIT licensed, ultimately
+    // sourced from jesseweed/seti-ui) so files look the way they would in
+    // VS Code itself: cpp/header share the same glyph VS Code uses, just
+    // colored blue for source vs. purple for headers (matching Seti's own
+    // "_cpp" vs "_cpp_1" convention for those extensions), and .txt falls
+    // back to Seti's generic gray "_default" file glyph.
+    static const QSet<QString> cppSourceExtensions = {"cpp", "cc", "cxx", "c++"};
+    static const QSet<QString> cppHeaderExtensions = {"h", "hpp", "hh", "hxx", "h++"};
+
+    QString suffix = QFileInfo(fileName).suffix().toLower();
+
+    if (cppSourceExtensions.contains(suffix))
+        return QIcon(":/icons/Icons/seti_cpp_24dp_519ABA.svg");
+    if (cppHeaderExtensions.contains(suffix))
+        return QIcon(":/icons/Icons/seti_header_24dp_A074C4.svg");
+    if (suffix == "md")
+        return QIcon(":/icons/Icons/seti_markdown_24dp_519ABA.svg");
+    if (suffix == "txt")
+        return QIcon(":/icons/Icons/seti_default_24dp_D4D7D6.svg");
+
+    return QIcon();
+}
+
+
 void MainWindow::wireModifiedIndicator(MonacoEditor *tab)
 {
     connect(tab, &MonacoEditor::modifiedChanged, this, [this, tab](bool modified) {
@@ -239,11 +270,20 @@ void MainWindow::wireModifiedIndicator(MonacoEditor *tab)
 }
 
 
-void MainWindow::on_actionNew_File_triggered()
+void MainWindow::newFileTab(const QString &titlePrefix, const QString &defaultExtension)
 {
-    theWorkspace -> addTab(new MonacoEditor(), QString("Tab %0").arg(theWorkspace -> count() + 1));
+    QString title = defaultExtension.isEmpty()
+        ? QString("%1 %2").arg(titlePrefix).arg(theWorkspace -> count() + 1)
+        : QString("%1 %2.%3").arg(titlePrefix).arg(theWorkspace -> count() + 1).arg(defaultExtension);
+
+    theWorkspace -> addTab(new MonacoEditor(), title);
     curr = qobject_cast<MonacoEditor*>(theWorkspace -> currentWidget());
     curr -> setProperty("filePath", QVariant(""));
+
+    // Read back by on_actionSave_triggered()'s Save-As fallback so a blank
+    // tab saved with no extension typed lands on the extension it was
+    // actually created for, instead of always defaulting to .cpp.
+    curr -> setProperty("defaultExtension", QVariant(defaultExtension.isEmpty() ? QStringLiteral("cpp") : defaultExtension));
 
     theWorkspace -> setCurrentIndex(theWorkspace -> count() - 1);
 
@@ -251,9 +291,33 @@ void MainWindow::on_actionNew_File_triggered()
 }
 
 
+void MainWindow::on_actionNew_File_triggered()
+{
+    newFileTab("Tab", "");
+}
+
+
+void MainWindow::on_actionNew_Text_File_triggered()
+{
+    newFileTab("Untitled", "txt");
+}
+
+
+void MainWindow::on_actionNew_Markdown_File_triggered()
+{
+    newFileTab("Untitled", "md");
+}
+
+
 void MainWindow::on_actionOpen_triggered()
 {
-    filePath = QFileDialog::getOpenFileName(this, "", projectFolderPath, "*.cpp");
+    // Scoped to the extensions this IDE actually recognizes (see
+    // iconForFileName()) -- deliberately no "All Files" catch-all, this is
+    // a C++ IDE, not a general-purpose file browser.
+    filePath = QFileDialog::getOpenFileName(this, "", projectFolderPath,
+        "C++ Source Files (*.cpp *.cc *.cxx *.c++);;"
+        "Header Files (*.h *.hpp *.hh *.hxx *.h++);;"
+        "Docs (*.md *.txt)");
     QFile openFile(filePath);
 
     if (filePath.isEmpty())
@@ -301,10 +365,10 @@ void MainWindow::on_actionOpen_Folder_triggered()
         child -> setText(0, it.fileName());
 
         info = QFileInfo(it.filePath());
-        if (info.suffix() == "cpp")
-            child -> setIcon(0, QIcon(":/icons/Icons/icons8-c++.svg"));
-        else if (info.isExecutable())
+        if (info.isExecutable())
             child -> setIcon(0, QIcon(":/icons/Icons/output_circle_24dp_FFFFFF_FILL0_wght400_GRAD0_opsz24.svg"));
+        else
+            child -> setIcon(0, iconForFileName(it.fileName()));
 
         child -> setData(0, Qt::UserRole, it.filePath());
     }
@@ -335,13 +399,27 @@ void MainWindow::on_actionSave_triggered()
 
     if (filePath == "")
     {
-        filePath = QFileDialog::getSaveFileName(this, "", projectFolderPath);
+        filePath = QFileDialog::getSaveFileName(this, "", projectFolderPath,
+            "C++ Source Files (*.cpp *.cc *.cxx *.c++);;"
+            "Header Files (*.h *.hpp *.hh *.hxx *.h++);;"
+            "Docs (*.md *.txt)");
 
         if (filePath.isEmpty())
             return;
 
-        if (!filePath.endsWith(".cpp"))
-            filePath += ".cpp";
+        // Only fall back to an extension when nothing recognized was
+        // typed/chosen at all -- respects an explicit .h/.md/.txt name
+        // instead of overriding it. The fallback itself comes from
+        // whichever "New ___ File" action created this tab (newFileTab()),
+        // so a blank Markdown tab saved as bare "notes" lands on notes.md
+        // rather than always defaulting to .cpp.
+        if (iconForFileName(QFileInfo(filePath).fileName()).isNull())
+        {
+            QString defaultExtension = curr -> property("defaultExtension").toString();
+            if (defaultExtension.isEmpty())
+                defaultExtension = "cpp";
+            filePath += "." + defaultExtension;
+        }
 
         curr -> setProperty("filePath", QVariant(filePath));
 
@@ -538,7 +616,13 @@ void MainWindow::on_actionRun_triggered()
 void MainWindow::localFilesItemClicked(QTreeWidgetItem* item)
 {
     filePath = item -> data(0, Qt::UserRole).toString();
-    if (filePath.contains(".cpp") == false)
+    // Reuses iconForFileName()'s recognized-extension set as the single
+    // source of truth for "is this a file type the IDE knows how to open" --
+    // previously this only allowed anything containing ".cpp" (which also
+    // loosely matched unrelated names like "notes.cpp.bak"), and silently
+    // refused to open .h/.md/.txt files even though they're now shown with
+    // their own icons in the tree.
+    if (iconForFileName(QFileInfo(filePath).fileName()).isNull())
         return;
     info = QFileInfo(filePath);
     if (info.isExecutable())
@@ -631,7 +715,7 @@ void MainWindow::onSetCloudFiles(const QString &fileName, const QString &cloudFi
     if (recentlyUploadedCloudPaths.remove(cloudFilePath))
         child -> setIcon(0, QIcon(":/icons/Icons/check_circle_24dp_34A853_FILL0_wght400_GRAD0_opsz24.svg"));
     else
-        child -> setIcon(0, QIcon(":/icons/Icons/icons8-c++.svg"));
+        child -> setIcon(0, iconForFileName(fileName));
 
     child -> setData(0, Qt::UserRole, cloudFilePath);
 }
