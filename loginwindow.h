@@ -28,6 +28,7 @@ private slots:
     void onLoginSucceeded(const QString &idToken, const QString &uid);
     void on_signUpButton_clicked();
     void onLoginFailed();
+    void onSignUpFailed(const QString &message);
     void onTokenRefreshed(const QString &idToken);
     void onSessionExpired();
 

@@ -16,6 +16,7 @@ LoginWindow::LoginWindow(MainWindow *mainWindow, QWidget *parent)
     auth = new Authenticator(this);
 
     connect(auth, &Authenticator::loginFailed, this, &LoginWindow::onLoginFailed);
+    connect(auth, &Authenticator::signUpFailed, this, &LoginWindow::onSignUpFailed);
     connect(auth, &Authenticator::loginSucceeded, this, &LoginWindow::onLoginSucceeded);
     connect(auth, &Authenticator::tokenRefreshed, this, &LoginWindow::onTokenRefreshed);
     connect(auth, &Authenticator::sessionExpired, this, &LoginWindow::onSessionExpired);
@@ -69,5 +70,10 @@ void LoginWindow::on_signUpButton_clicked()
 void LoginWindow::onLoginFailed()
 {
     mainWindow -> statusBar() -> showMessage("Incorrect email/password.", 2000);
+}
+
+void LoginWindow::onSignUpFailed(const QString &message)
+{
+    mainWindow -> statusBar() -> showMessage(message, 4000);
 }
 

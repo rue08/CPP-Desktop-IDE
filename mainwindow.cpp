@@ -185,9 +185,8 @@ void MainWindow::closeTab(int index)
     else
     {
         QFile closeFile(filePath);
-        closeFile.open(QIODevice::ReadOnly | QIODevice::Text);
 
-        if (curr -> toPlainText() != closeFile.readAll())
+        if (!closeFile.open(QIODevice::ReadOnly | QIODevice::Text) || curr -> toPlainText() != closeFile.readAll())
             msgBox.setText("The document has been modified.");
         else
         {
@@ -323,7 +322,11 @@ void MainWindow::on_actionOpen_triggered()
     if (filePath.isEmpty())
         return;
 
-    openFile.open(QIODevice::ReadOnly | QIODevice::Text);
+    if (!openFile.open(QIODevice::ReadOnly | QIODevice::Text))
+    {
+        statusBar() -> showMessage("Couldn't open \"" + QFileInfo(filePath).fileName() + "\".", 4000);
+        return;
+    }
 
     info = QFileInfo(filePath);
     theWorkspace->addTab(new MonacoEditor(), info.fileName());
@@ -435,7 +438,12 @@ void MainWindow::on_actionSave_triggered()
 
     QFile saveFile(filePath);
 
-    saveFile.open(QIODevice::WriteOnly | QIODevice::Text);
+    if (!saveFile.open(QIODevice::WriteOnly | QIODevice::Text))
+    {
+        QMessageBox::warning(this, "Save Failed",
+            "Couldn't write to \"" + QFileInfo(filePath).fileName() + "\":\n" + saveFile.errorString());
+        return;
+    }
 
     QTextStream out(&saveFile);
     out << curr -> toPlainText();

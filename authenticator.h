@@ -38,6 +38,13 @@ private:
     // token in quick succession).
     bool refreshInProgress = false;
 
+    // signUserUp() and signUserIn() share performPOST()/parseResponse(), so
+    // this is how parseResponse() tells which request just failed -- only
+    // relevant for picking EMAIL_EXISTS out of a sign-up failure specifically
+    // (see parseResponse()). Set right before the request goes out, read and
+    // cleared as soon as the response comes back.
+    bool pendingSignUp = false;
+
     void performPOST(const QString &url, const QJsonDocument &payload);
     void parseResponse(const QByteArray &response);
     void onRefreshFinished();
@@ -45,6 +52,12 @@ private:
 signals:
     void loginSucceeded(const QString &idToken, const QString &uid);
     void loginFailed();
+
+    // A sign-up specifically failed because the email is already registered.
+    // Firebase's signIn/signUp responses are otherwise handled identically
+    // (see parseResponse()) -- this is the one case worth telling apart, since
+    // "Incorrect email/password" is actively misleading for it.
+    void signUpFailed(const QString &message);
 
     // A new idToken is ready -- an on-demand refresh, triggered by Storage
     // hitting a stale token, succeeded.

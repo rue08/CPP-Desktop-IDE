@@ -24,6 +24,8 @@ void Authenticator::networkReplyReadyRead()
 
 void Authenticator::signUserUp(const QString &email, const QString &password)
 {
+    pendingSignUp = true;
+
     QString signUpEndpoint = "https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=";
     signUpEndpoint += apiKey;
     QVariantMap payload;
@@ -38,6 +40,8 @@ void Authenticator::signUserUp(const QString &email, const QString &password)
 
 void Authenticator::signUserIn(const QString &email, const QString &password)
 {
+    pendingSignUp = false;
+
     QString signInEndpoint = "https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=";
     signInEndpoint += apiKey;
     QVariantMap payload;
@@ -65,12 +69,27 @@ void Authenticator::parseResponse(const QByteArray &response)
     QJsonDocument jsonDocument = QJsonDocument::fromJson(response);
     QJsonObject object = jsonDocument.object();
 
+    // Read and clear up front -- this response belongs to whichever request
+    // is currently in flight, and that's over as of this call either way.
+    bool wasSignUp = pendingSignUp;
+    pendingSignUp = false;
+
     // A transport failure (offline, timeout, DNS) can leave `response` empty
     // or non-JSON, which used to fall through and emit loginSucceeded with
     // blank credentials. Require a real idToken before treating this as success.
     if (!jsonDocument.isObject() || object.contains("error") || !object.contains("idToken"))
     {
-        emit loginFailed();
+        // Sign-in and sign-up failures are otherwise identical here (both
+        // just land on the generic "Incorrect email/password." message) --
+        // EMAIL_EXISTS is the one case worth calling out specifically, since
+        // that message is actively wrong for it. Firebase shapes this as
+        // {"error": {"message": "EMAIL_EXISTS", ...}}.
+        QString errorCode = object.value("error").toObject().value("message").toString();
+
+        if (wasSignUp && errorCode == "EMAIL_EXISTS")
+            emit signUpFailed("An account with this email already exists.");
+        else
+            emit loginFailed();
         return;
     }
 
