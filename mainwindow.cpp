@@ -71,6 +71,17 @@ MainWindow::MainWindow(QWidget *parent)
     cloudFiles -> setHeaderHidden(true);
     cloudFiles -> setColumnCount(1);
 
+    // Files are double-click-to-open but previously gave zero indication of
+    // that -- no cursor change, no hover feedback, same as any inert label.
+    // Hand cursor matches the treatment already used on the Login button
+    // (loginwindow.ui) for other clickable things; the hover highlight is a
+    // low-alpha white overlay to stay subtle against the app's dark bg.
+    static const QString fileTreeHoverStyle = "QTreeWidget::item:hover { background: rgba(255,255,255,25); }";
+    localFiles -> setCursor(Qt::PointingHandCursor);
+    localFiles -> setStyleSheet(fileTreeHoverStyle);
+    cloudFiles -> setCursor(Qt::PointingHandCursor);
+    cloudFiles -> setStyleSheet(fileTreeHoverStyle);
+
 
     localFilesArea = new QLabel("Local Files' Area");
     localFilesStack -> addWidget(localFilesArea);
@@ -229,19 +240,22 @@ QIcon MainWindow::iconForFileName(const QString &fileName)
     // Icons are pulled from VS Code's own default "Seti" icon theme
     // (microsoft/vscode, extensions/theme-seti -- MIT licensed, ultimately
     // sourced from jesseweed/seti-ui) so files look the way they would in
-    // VS Code itself: cpp/header share the same glyph VS Code uses, just
-    // colored blue for source vs. purple for headers (matching Seti's own
-    // "_cpp" vs "_cpp_1" convention for those extensions), and .txt falls
-    // back to Seti's generic gray "_default" file glyph.
+    // VS Code itself. Headers split into two icons, matching Seti's own
+    // distinction: plain .h gets the "C" glyph ("_c_1"), while
+    // .hpp/.hh/.hxx/.h++ get the "C++" glyph ("_cpp_1") -- both purple,
+    // vs. blue for actual source files. .txt falls back to Seti's generic
+    // gray "_default" file glyph.
     static const QSet<QString> cppSourceExtensions = {"cpp", "cc", "cxx", "c++"};
-    static const QSet<QString> cppHeaderExtensions = {"h", "hpp", "hh", "hxx", "h++"};
+    static const QSet<QString> cppPlusPlusHeaderExtensions = {"hpp", "hh", "hxx", "h++"};
 
     QString suffix = QFileInfo(fileName).suffix().toLower();
 
     if (cppSourceExtensions.contains(suffix))
         return QIcon(":/icons/Icons/seti_cpp_24dp_519ABA.svg");
-    if (cppHeaderExtensions.contains(suffix))
-        return QIcon(":/icons/Icons/seti_header_24dp_A074C4.svg");
+    if (suffix == "h")
+        return QIcon(":/icons/Icons/seti_h_24dp_A074C4.svg");
+    if (cppPlusPlusHeaderExtensions.contains(suffix))
+        return QIcon(":/icons/Icons/seti_hpp_24dp_A074C4.svg");
     if (suffix == "md")
         return QIcon(":/icons/Icons/seti_markdown_24dp_519ABA.svg");
     if (suffix == "txt")
