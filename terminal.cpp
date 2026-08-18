@@ -3,6 +3,7 @@
 #include "monacoeditor.h"
 #include <QCoreApplication>
 #include <QDir>
+#include <QFile>
 #include <QStandardPaths>
 #include <QStatusBar>
 
@@ -104,8 +105,40 @@ void Terminal::runFile()
     // This forces a new native Terminal window to open.
 
     // 1. Create the command chain (Compile -> Run -> Read/Pause)
-    // We add 'read' at the end so the terminal doesn't close immediately if the program ends fast.
-    QString macCmd = QString("cd \\\"%1\\\" && g++ %2 -o %3 && \\\"%1\\\"%3 ; read").arg(path, name, outputName);
+    // We add a pause at the end so the terminal doesn't close immediately if the program ends
+    // fast, whether the compile/run actually succeeded or not. A bare 'read' blocks silently with
+    // no indication of what's happening or that the user needs to do anything -- echoing a message
+    // first makes it explicit that pressing Enter is what releases the terminal back to a normal
+    // prompt (and is required before the next Run will work, since Run reuses this same window).
+    //
+    // The echo+read pair lives in a small trailer script rather than being typed inline, because
+    // do script echoes back whatever text it's given as the literal "command line" before showing
+    // its output -- typing "... ; echo '...' ; read" in directly would show that plumbing as part
+    // of the command itself, right above its own output repeating it. Keeping the compile/run
+    // chain itself inline (rather than wrapping the whole thing in a script) means the visible
+    // command line still reads as the real thing you'd type by hand, not an opaque script
+    // invocation -- only the trailing pause step is routed through the script.
+    //
+    // Not done via read's own -p flag: that flag isn't portable across shells -- bash treats -p as
+    // "show this prompt", but zsh (the macOS default since Catalina) treats it as "read from a
+    // coprocess" instead, which fails with "no coprocess".
+    QString trailerContents = QStringLiteral(
+        "echo \"Press Enter to exit this command execution...\"\n"
+        "read\n"
+    );
+
+    QString trailerPath = QDir::tempPath() + QString("/ide_run_trailer_%1.sh").arg(QCoreApplication::applicationPid());
+    QFile trailerFile(trailerPath);
+    if (!trailerFile.open(QIODevice::WriteOnly | QIODevice::Truncate | QIODevice::Text))
+    {
+        mainWindow -> statusBar() -> showMessage("Couldn't write the run script to " + trailerPath, 4000);
+        return;
+    }
+    trailerFile.write(trailerContents.toUtf8());
+    trailerFile.close();
+    trailerFile.setPermissions(trailerFile.permissions() | QFile::ExeOwner);
+
+    QString macCmd = QString("cd \\\"%1\\\" && g++ %2 -o %3 && \\\"%1\\\"%3 ; sh \\\"%4\\\"").arg(path, name, outputName, trailerPath);
 
     // 2. Wrap it in AppleScript
     fullCommand = "osascript";
