@@ -54,7 +54,6 @@ void LoginWindow::on_loginButton_clicked()
 
 void LoginWindow::onLoginSucceeded(const QString &idToken, const QString &uid)
 {
-    mainWindow -> statusBar() -> showMessage("Successfully logged in.", 2000);
     emit enableActionUpload(true, idToken, uid);
     close();
 }

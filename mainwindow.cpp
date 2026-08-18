@@ -450,6 +450,7 @@ void MainWindow::onEnableActionUpload(bool flag, const QString& idToken, const Q
 
 void MainWindow::onBackendLoginSucceeded()
 {
+    statusBar() -> showMessage("Successfully logged in.", 2000);
     storage -> listFiles();
 }
 
@@ -457,9 +458,8 @@ void MainWindow::onBackendLoginSucceeded()
 void MainWindow::onBackendLoginFailed(const QString &errorString)
 {
     ui -> actionUpload -> setEnabled(false);
-    QMessageBox::warning(this, "Backend Unavailable",
-        "Could not reach the file-storage backend:\n" + errorString +
-        "\n\nCheck the backend URL under Settings.");
+    statusBar() -> showMessage("Logged in successfully, but the cloud backend is unreachable.", 5000);
+    QMessageBox::warning(this, "Backend Unavailable", errorString);
 }
 
 
