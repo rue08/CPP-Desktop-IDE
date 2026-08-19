@@ -22,6 +22,14 @@ void Storage::setIdToken(const QString &idToken)
     this -> idToken = idToken;
 }
 
+QNetworkRequest Storage::buildRequest(const QUrl &url) const
+{
+    QNetworkRequest request{url};
+    request.setRawHeader("ngrok-skip-browser-warning", "true");
+    return request;
+}
+
+
 void Storage::setBackendUrl(const QString &backendUrl)
 {
     // Trim any trailing slash so callers below can unconditionally do
@@ -39,7 +47,7 @@ void Storage::loginToBackend()
     QJsonObject payload;
     payload["id_token"] = idToken;
 
-    newRequest = QNetworkRequest{QUrl(backendUrl + "/auth/firebase/login")};
+    newRequest = buildRequest(QUrl(backendUrl + "/auth/firebase/login"));
     newRequest.setHeader(QNetworkRequest::ContentTypeHeader, QString("application/json"));
 
     QNetworkReply* reply = networkAccessManager -> post(newRequest, QJsonDocument(payload).toJson());
@@ -196,7 +204,7 @@ void Storage::startUpload(const QByteArray& fileData, const QString& localFilePa
     payload["filename"] = filename;
     payload["content"] = QString::fromUtf8(fileData);
 
-    newRequest = QNetworkRequest{QUrl(backendUrl + "/files")};
+    newRequest = buildRequest(QUrl(backendUrl + "/files"));
     newRequest.setRawHeader("Authorization", ("Bearer " + idToken).toUtf8());
     newRequest.setHeader(QNetworkRequest::ContentTypeHeader, QString("application/json"));
 
@@ -262,7 +270,7 @@ void Storage::listFiles()
 {
     emit cloudFilesCleared();
 
-    QNetworkRequest request{QUrl(backendUrl + "/files")};
+    QNetworkRequest request = buildRequest(QUrl(backendUrl + "/files"));
     request.setRawHeader("Authorization", ("Bearer " + idToken).toUtf8());
     request.setHeader(QNetworkRequest::ContentTypeHeader, QString("application/json"));
 
@@ -316,7 +324,7 @@ void Storage::parseResponse(const QByteArray &response)
 
 void Storage::downloadFile(const QString &fileId, QObject *targetTab)
 {
-    newRequest = QNetworkRequest{QUrl(backendUrl + "/files/" + fileId)};
+    newRequest = buildRequest(QUrl(backendUrl + "/files/" + fileId));
     newRequest.setRawHeader("Authorization", ("Bearer " + idToken).toUtf8());
 
     QNetworkReply* reply = networkAccessManager -> get(newRequest);

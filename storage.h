@@ -85,6 +85,14 @@ private:
     bool refreshInProgress = false;
     QVector<std::function<void(bool refreshed)>> pendingRetries;
 
+    // Builds a QNetworkRequest for `url` with the header ngrok's free tier
+    // requires to skip its "you are about to visit..." browser-warning
+    // interstitial (ERR_NGROK_6024) -- without it, every GET through the
+    // tunnel comes back as that warning page's HTML instead of a real
+    // response. All requests below go through this instead of constructing
+    // QNetworkRequest directly, so no future endpoint can forget it.
+    QNetworkRequest buildRequest(const QUrl &url) const;
+
     void startUpload(const QByteArray &fileData, const QString &localFilePath);
     void onUploadFinished(const QByteArray &fileData, const QString &localFilePath);
     void onListFilesFinished();
