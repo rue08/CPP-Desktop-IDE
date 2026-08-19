@@ -49,6 +49,15 @@ public:
     void downloadFile(const QString &fileId, QObject *targetTab);
     void listFiles();
 
+    // Deletes one cloud file by its backend id. Safe to call repeatedly in a
+    // loop for a multi-file batch -- mirrors uploadFile()'s wave tracking
+    // (see its comment above): deleteBatchFinished() fires once per wave
+    // with an accurate count of how many succeeded, and the cloud file list
+    // refreshes once the wave settles. `fileName` is only carried along for
+    // deleteSucceeded()/deleteFailed() to report -- the backend only needs
+    // the id.
+    void deleteFile(const QString &fileId, const QString &fileName);
+
     // Queues a single file for upload. Safe to call repeatedly in a loop for
     // a multi-file batch: Storage tracks how many uploads are outstanding
     // internally and, once every upload queued since the last time it was
@@ -90,6 +99,10 @@ private:
     // 0) -- reported via uploadBatchFinished() once the wave settles.
     int succeededUploads = 0;
 
+    // Same pattern as pendingUploads/succeededUploads above, for deleteFile().
+    int pendingDeletes = 0;
+    int succeededDeletes = 0;
+
     // Requests deferred behind an in-flight token refresh. Each one knows how
     // to redo its own exact request (retry(true)) or how to settle itself as
     // a failure if the refresh didn't pan out (retry(false)).
@@ -109,10 +122,16 @@ private:
     void onListFilesFinished();
     void onDownloadFinished(const QString &cloudFilePath, QPointer<QObject> targetTab);
 
+    void startDelete(const QString &fileId, const QString &fileName);
+    void onDeleteFinished(const QString &fileId, const QString &fileName);
+
     void parseResponse(const QByteArray &response);
 
     // Called exactly once per uploadFile() call, on success or failure.
     void finishPendingUpload();
+
+    // Called exactly once per deleteFile() call, on success or failure.
+    void finishPendingDelete();
 
     // Returns a human-readable error if the reply failed (transport error, or
     // a backend-style {"error": "..."} JSON body), otherwise a null QString.
@@ -150,6 +169,14 @@ signals:
     void uploadBatchFinished(int succeededCount);
     void listFilesFailed(const QString &errorString);
     void downloadFailed(const QString &errorString, QObject *targetTab);
+
+    // `fileId` lets the caller close a tab open on the file that just got
+    // deleted; `fileName` is carried along purely for display.
+    void deleteSucceeded(const QString &fileId, const QString &fileName);
+    void deleteFailed(const QString &fileName, const QString &errorString);
+
+    // Same semantics as uploadBatchFinished() above, for deleteFile() waves.
+    void deleteBatchFinished(int succeededCount);
 
     void backendLoginSucceeded();
     void backendLoginFailed(const QString &errorString);

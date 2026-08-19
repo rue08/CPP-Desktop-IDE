@@ -278,6 +278,79 @@ void Storage::finishPendingUpload()
 }
 
 
+void Storage::deleteFile(const QString &fileId, const QString &fileName)
+{
+    if (pendingDeletes == 0)
+        succeededDeletes = 0;
+
+    pendingDeletes++;
+    startDelete(fileId, fileName);
+}
+
+
+void Storage::startDelete(const QString &fileId, const QString &fileName)
+{
+    newRequest = buildRequest(QUrl(backendUrl + "/files/" + fileId));
+    newRequest.setRawHeader("Authorization", ("Bearer " + idToken).toUtf8());
+
+    QNetworkReply* reply = networkAccessManager -> deleteResource(newRequest);
+
+    connect(reply, &QNetworkReply::finished, this, [this, fileId, fileName]() {
+        this -> onDeleteFinished(fileId, fileName);
+    });
+}
+
+
+void Storage::onDeleteFinished(const QString &fileId, const QString &fileName)
+{
+    QNetworkReply *reply = qobject_cast<QNetworkReply*>(sender());
+    QByteArray response = reply -> readAll();
+
+    if (deferIfAuthError(reply, response, [this, fileId, fileName](bool refreshed) {
+            if (refreshed)
+                this -> startDelete(fileId, fileName);
+            else
+            {
+                emit deleteFailed(fileName, "Session expired. Please log in again.");
+                finishPendingDelete();
+            }
+        }))
+    {
+        reply->deleteLater();
+        return;
+    }
+
+    QString error = extractError(reply, response);
+    if (!error.isEmpty())
+    {
+        emit deleteFailed(fileName, error);
+        reply->deleteLater();
+        finishPendingDelete();
+        return;
+    }
+
+    // DELETE /files/:id responds 204 No Content on success -- nothing to
+    // parse out of `response`, fileId/fileName already carry everything the
+    // caller needs.
+    succeededDeletes++;
+    emit deleteSucceeded(fileId, fileName);
+    finishPendingDelete();
+
+    reply->deleteLater();
+}
+
+
+void Storage::finishPendingDelete()
+{
+    // Same reasoning as finishPendingUpload() above.
+    if (--pendingDeletes <= 0)
+    {
+        listFiles();
+        emit deleteBatchFinished(succeededDeletes);
+    }
+}
+
+
 void Storage::listFiles()
 {
     emit cloudFilesCleared();

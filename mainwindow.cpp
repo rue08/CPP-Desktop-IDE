@@ -117,6 +117,7 @@ MainWindow::MainWindow(QWidget *parent)
 
     cloudFiles -> setHeaderHidden(true);
     cloudFiles -> setColumnCount(1);
+    cloudFiles -> setSelectionMode(QAbstractItemView::ExtendedSelection);
 
     // Files are double-click-to-open but previously gave zero indication of
     // that -- no cursor change, no hover feedback, same as any inert label.
@@ -161,6 +162,9 @@ MainWindow::MainWindow(QWidget *parent)
     connect(storage, &Storage::uploadSucceeded, this, &MainWindow::onUploadSucceeded);
     connect(storage, &Storage::uploadFailed, this, &MainWindow::onUploadFailed);
     connect(storage, &Storage::uploadBatchFinished, this, &MainWindow::onUploadBatchFinished);
+    connect(storage, &Storage::deleteSucceeded, this, &MainWindow::onDeleteSucceeded);
+    connect(storage, &Storage::deleteFailed, this, &MainWindow::onDeleteFailed);
+    connect(storage, &Storage::deleteBatchFinished, this, &MainWindow::onDeleteBatchFinished);
     connect(storage, &Storage::listFilesFailed, this, &MainWindow::onListFilesFailed);
     connect(storage, &Storage::downloadFailed, this, &MainWindow::onDownloadFailed);
     connect(storage, &Storage::tokenRefreshRequired, this, &MainWindow::onTokenRefreshRequired);
@@ -647,6 +651,8 @@ void MainWindow::onEnableActionUpload(bool flag, const QString& idToken, const Q
 
     ui -> actionUpload -> setEnabled(flag);
     ui -> actionLogout -> setEnabled(flag);
+    ui -> actionUpload_File_to_Cloud -> setEnabled(flag);
+    ui -> actionDelete_File_from_Cloud -> setEnabled(flag);
     storage -> setIdToken(idToken);
 
     // Establishes/refreshes the users row for this session before anything
@@ -666,6 +672,8 @@ void MainWindow::onBackendLoginFailed(const QString &errorString)
 {
     ui -> actionUpload -> setEnabled(false);
     ui -> actionLogout -> setEnabled(false);
+    ui -> actionUpload_File_to_Cloud -> setEnabled(false);
+    ui -> actionDelete_File_from_Cloud -> setEnabled(false);
     statusBar() -> showMessage("Logged in successfully, but the cloud backend is unreachable.", 5000);
     QMessageBox::warning(this, "Backend Unavailable", errorString);
 }
@@ -835,7 +843,10 @@ void MainWindow::on_actionUpload_triggered()
     curr = qobject_cast<MonacoEditor*>(theWorkspace -> currentWidget());
     QList<QTreeWidgetItem*> ls = localFiles -> selectedItems();
     if (!curr && ls.size() == 0)
+    {
+        ui -> statusbar -> showMessage("Select a file to upload.", 3000);
         return;
+    }
     if (curr && ls.size() == 0)
     {
         if (curr -> property("isCloudFile").toBool())
@@ -908,6 +919,103 @@ void MainWindow::on_actionUpload_triggered()
         QMessageBox::information(this, "Upload Skipped",
             "The following files already exist in the cloud and were left unchanged:\n" + skippedFiles.join("\n"));
 }
+
+
+void MainWindow::on_actionUpload_File_to_Cloud_triggered()
+{
+    // The File menu's "Upload File to Cloud" is the toolbar Upload button in
+    // every respect -- same target resolution, same collision warning.
+    on_actionUpload_triggered();
+}
+
+
+void MainWindow::on_actionDelete_File_from_Cloud_triggered()
+{
+    // Cloud-side only, deliberately: local files aren't a valid target here
+    // (see the point 7 discussion -- unlike upload, delete doesn't try to
+    // resolve a matching cloud file by filename from the local tree).
+    QList<QTreeWidgetItem*> ls = cloudFiles -> selectedItems();
+
+    QStringList fileIds;
+    QStringList fileNames;
+
+    if (ls.size() > 0)
+    {
+        for (QTreeWidgetItem *item : ls)
+        {
+            fileIds << item -> data(0, Qt::UserRole).toString();
+            fileNames << item -> text(0);
+        }
+    }
+    else
+    {
+        curr = qobject_cast<MonacoEditor*>(theWorkspace -> currentWidget());
+        if (curr && curr -> property("isCloudFile").toBool())
+        {
+            fileIds << curr -> property("filePath").toString();
+            fileNames << curr -> property("cloudFileName").toString();
+        }
+    }
+
+    if (fileIds.isEmpty())
+    {
+        ui -> statusbar -> showMessage("Select a cloud file to delete.", 3000);
+        return;
+    }
+
+    QString message = fileIds.size() == 1
+        ? QString("Delete the cloud copy of \"%1\"? This can't be undone.").arg(fileNames.first())
+        : QString("Delete these %1 cloud files? This can't be undone.\n\n%2")
+              .arg(fileIds.size()).arg(fileNames.join("\n"));
+
+    QMessageBox::StandardButton choice = QMessageBox::question(this, "Delete File from Cloud", message,
+        QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
+
+    if (choice != QMessageBox::Yes)
+        return;
+
+    for (int i = 0; i < fileIds.size(); i++)
+        storage -> deleteFile(fileIds[i], fileNames[i]);
+}
+
+
+void MainWindow::onDeleteSucceeded(const QString &fileId, const QString &fileName)
+{
+    Q_UNUSED(fileName);
+
+    // Close every tab open on this file -- normally at most one, but
+    // cloudFilesItemClicked() always opens a fresh tab rather than reusing
+    // an existing one, so more than one is possible. Iterated backwards so
+    // removing a tab doesn't invalidate the indices still to be checked.
+    for (int i = theWorkspace -> count() - 1; i >= 0; i--)
+    {
+        MonacoEditor *tab = qobject_cast<MonacoEditor*>(theWorkspace -> widget(i));
+        if (tab && tab -> property("isCloudFile").toBool() && tab -> property("filePath").toString() == fileId)
+        {
+            theWorkspace -> removeTab(i);
+            delete tab;
+        }
+    }
+}
+
+
+void MainWindow::onDeleteFailed(const QString &fileName, const QString &errorString)
+{
+    QMessageBox::warning(this, "Delete Failed",
+        QString("Could not delete \"%1\" from the cloud:\n%2").arg(fileName, errorString));
+}
+
+
+void MainWindow::onDeleteBatchFinished(int succeededCount)
+{
+    if (succeededCount <= 0)
+        return; // nothing succeeded in this wave -- onDeleteFailed() already covers failures
+
+    ui -> statusbar -> showMessage(
+        succeededCount == 1 ? "Deleted 1 file from the cloud." : QString("Deleted %1 files from the cloud.").arg(succeededCount),
+        4000);
+}
+
 
 void MainWindow::onSetCloudFiles(const QString &fileName, const QString &cloudFilePath)
 {
@@ -1006,6 +1114,8 @@ void MainWindow::onSessionExpired()
 
     ui -> actionUpload -> setEnabled(false);
     ui -> actionLogout -> setEnabled(false);
+    ui -> actionUpload_File_to_Cloud -> setEnabled(false);
+    ui -> actionDelete_File_from_Cloud -> setEnabled(false);
     cloudFiles -> clear();
     cloudFilesStack -> setCurrentWidget(cloudFilesArea);
 

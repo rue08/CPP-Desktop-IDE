@@ -73,6 +73,11 @@ private slots:
 
     void on_actionUpload_triggered();
 
+    // File menu equivalents of the toolbar Upload button and (new)
+    // cloud-file deletion -- see mainwindow.cpp for what each does.
+    void on_actionUpload_File_to_Cloud_triggered();
+    void on_actionDelete_File_from_Cloud_triggered();
+
     void onSetCloudFiles(const QString &fileName, const QString &cloudFilePath);
 
     void onDownloadFile(const QByteArray &response, QObject *targetTab);
@@ -88,6 +93,13 @@ private slots:
     // batch's worth queued back-to-back) has fully settled -- see
     // Storage::uploadBatchFinished().
     void onUploadBatchFinished(int succeededCount);
+
+    // fileId lets this close any tab left open on the file that just got
+    // deleted -- see Storage::deleteSucceeded().
+    void onDeleteSucceeded(const QString &fileId, const QString &fileName);
+    void onDeleteFailed(const QString &fileName, const QString &errorString);
+    void onDeleteBatchFinished(int succeededCount);
+
     void onListFilesFailed(const QString &errorString);
     void onDownloadFailed(const QString &errorString, QObject *targetTab);
 
