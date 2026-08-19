@@ -231,6 +231,16 @@ void MainWindow::closeTab(int index)
 
     if (curr -> property("isCloudFile").toBool())
     {
+        // Nothing to reconcile if the tab's content matches what was last
+        // downloaded/uploaded -- mirrors the unchanged-file fast path just
+        // below for local files.
+        if (!curr -> isModified())
+        {
+            theWorkspace -> removeTab(index);
+            delete curr;
+            return;
+        }
+
         QMessageBox msgBox(this);
         msgBox.setIcon(QMessageBox::Information);
 
@@ -1047,10 +1057,35 @@ void MainWindow::onSetCloudFiles(const QString &fileName, const QString &cloudFi
 
 void MainWindow::onUploadSucceeded(const QString &localFilePath, const QString &cloudFilePath)
 {
-    Q_UNUSED(localFilePath);
     recentlyUploadedCloudPaths.insert(cloudFilePath);
     // No per-file status message here -- see onUploadBatchFinished(), which
     // reports how many files succeeded once the whole wave settles.
+
+    // Clears the "unsaved changes" dot on whichever open tab this upload was
+    // for -- its content just reached the cloud, so it's no longer ahead of
+    // what's saved there (same reasoning as on_actionSave_triggered()'s
+    // setModified(false), just for the upload path instead of the disk-save
+    // path). Matched by property rather than tab identity, since Storage
+    // only reports the upload by path/name, not which tab (if any)
+    // triggered it -- and which property to match on depends on how the
+    // upload started (see on_actionUpload_triggered()): a cloud-tab
+    // re-upload passes its cloudFileName (a display name, not a real path)
+    // as localFilePath, while a local-file upload (tab or tree selection)
+    // passes the real path.
+    for (int i = 0; i < theWorkspace -> count(); i++)
+    {
+        MonacoEditor *tab = qobject_cast<MonacoEditor*>(theWorkspace -> widget(i));
+        if (!tab)
+            continue;
+
+        bool isCloudTab = tab -> property("isCloudFile").toBool();
+        bool matches = isCloudTab
+            ? tab -> property("cloudFileName").toString() == localFilePath
+            : tab -> property("filePath").toString() == localFilePath;
+
+        if (matches)
+            tab -> setModified(false);
+    }
 }
 
 
