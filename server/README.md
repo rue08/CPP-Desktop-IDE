@@ -5,6 +5,11 @@ Authentication is unchanged** — the C++ client still signs up/in/refreshes aga
 directly. This server only verifies the Firebase ID tokens the client already has, using
 Google's public JWKS (no Firebase Admin SDK, no service account secret).
 
+This is the implementation of the one shared instance VaultWright's client is built around, run
+by the maintainer — documented here as an operational reference for running/maintaining that
+instance, not as a self-hosting guide. The project isn't set up to support parallel,
+community-run instances, and isn't taking outside contributions at this stage.
+
 ## Run it
 
 ```sh

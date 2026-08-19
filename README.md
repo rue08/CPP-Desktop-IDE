@@ -9,16 +9,19 @@ Cloud backup has made personal files effortless to access and sync across machin
 - An embedded [Monaco Editor](https://microsoft.github.io/monaco-editor/) (VS Code's editor core) for every workspace tab — real find/replace, multi-cursor editing, code folding, a minimap, and language-aware syntax highlighting.
 - One-click compile & run, driving the `g++` toolchain directly from the editor.
 - A cloud-backed file system — save a file locally, upload it, and pull it down again from any other machine you're signed into.
-- Asynchronous upload/download with real-time status feedback.
+- Stay signed in across restarts — logging in once is enough; the app silently restores your session on the next launch instead of asking again.
+- Asynchronous upload/download with real-time status feedback, including batch upload and batch delete for multiple files at once (multi-select in either file tree, or use the File menu's Upload/Delete File to/from Cloud actions).
 - Local file and folder management alongside your cloud files, side by side.
+- Light/dark theme, either following the OS or set explicitly via **View > Theme**.
 
 ## Tech Stack
 - **Language**: C++
 - **Framework**: Qt (Widgets + Network + WebEngine + WebChannel)
 - **Editor**: [Monaco Editor](https://microsoft.github.io/monaco-editor/), embedded via `QWebEngineView`
 - **Auth**: Firebase Authentication
-- **File storage**: self-hosted [Node.js + PostgreSQL backend](server/) (`server/`) — Firebase
-  ID tokens in, files out; no Firestore/Cloud Storage involved
+- **File storage**: [Node.js + PostgreSQL backend](server/) (`server/`) — Firebase ID tokens in,
+  files out; no Firestore/Cloud Storage involved. One instance is hosted centrally for you, see
+  **Cloud Backend** below — you never need to run this yourself.
 - **Compiler**: g++
 - **Networking**: QtNetwork (REST APIs)
 
@@ -27,8 +30,9 @@ Cloud backup has made personal files effortless to access and sync across machin
 There's no packaged release yet — the project is still being polished before a first public
 release, so building from source is currently the only way to run it.
 
-Sign-up/login works out of the box once built. Cloud file storage additionally needs a running
-copy of the [`server/`](server/) backend — see **Cloud Backend** below.
+Sign-up/login works out of the box once built. Cloud file storage talks to a central backend
+that's already running for you — nothing to set up on your end, just point the app at it (see
+**Cloud Backend** below).
 
 ### Build from source
 
@@ -103,27 +107,29 @@ launches.
 
 **Availability:** The shared backend isn't running around the clock. It's hosted on a personal
 laptop rather than dedicated server infrastructure, reached through a free-tier ngrok tunnel —
-and free ngrok tunnels are ephemeral by design (a temporary, single-session URL, not a permanent
-one), so this setup isn't meant to run unattended 24/7. The project's also still in a pre-release
+and free ngrok tunnels are a temporary, single-session URL, not a permanent
+one, so this setup isn't meant to run unattended 24/7. The project's also still in a pre-release
 polish phase, not yet a guaranteed-uptime service. Cloud sync (Upload/Vault) is generally
 available **3pm–12am IST**; outside that window, everything else — local editing, saving,
 compiling, running — works exactly the same, only cloud features will be unreachable until the
 backend's back up.
 
-[`server/README.md`](server/README.md) documents running the backend yourself via Docker
-Compose — that's only relevant if you're contributing to the backend or deliberately want your
-own separate instance instead of the shared one.
+[`server/README.md`](server/README.md) documents how the shared backend itself is built and run
+— implementation detail for the one instance VaultWright is built around, not a self-hosting
+guide. The project isn't set up to support parallel, community-run instances, and isn't taking
+outside contributions at this stage.
 
 ## Using the IDE
 
 1. **Point the app at the backend** — click ⚙️ **Settings** in the toolbar and enter the
    current backend URL (see **Cloud Backend** above). Only needed once, or whenever the URL changes.
-2. **Sign up / log in** — click the login icon in the toolbar and create an account with an email and password. This is what ties your files to you across machines.
+2. **Sign up / log in** — click the login icon in the toolbar and create an account with an email and password. This is what ties your files to you across machines; once you're signed in, the app keeps you signed in on future launches too, so this is normally a one-time step per machine.
 3. **Create or open a file** — `Ctrl+N` for a new file, `Ctrl+O` to open an existing one, or "Open Folder..." to work across a whole project.
 4. **Write and save** — `Ctrl+S` saves locally, same as any editor.
 5. **Run it** — hit the ▶️ **Run** button to compile and execute the current file with `g++`; output opens in a terminal window.
-6. **Push to the cloud** — with the file open, click the ☁️ **Upload** button to save it to your account.
+6. **Push to the cloud** — with the file open, click the ☁️ **Upload** button (or **File > Upload File to Cloud**) to save it to your account. Select multiple files in the local files tree first to upload them all in one batch.
 7. **Pull it down elsewhere** — open **The Vault** from the toolbar to browse the files you've uploaded, and click one to bring it down to whatever machine you're on.
+8. **Delete a cloud file** — select it (or several) in The Vault and use **File > Delete File from Cloud**; you'll be asked to confirm first.
 
 ## Project Status
 The main aim is to build a full-featured project, and it's under active development.
@@ -131,6 +137,8 @@ The main aim is to build a full-featured project, and it's under active developm
 ### Coming next
 1. More robust file handling, including uploading whole folders (currently limited to individual code files).
 2. Continued UI/UX improvements.
+3. An integrated terminal.
+4. Booklet of Profile options.
 
 ## Author
 Mehul Sharma\
