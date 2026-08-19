@@ -6,6 +6,12 @@ const router = express.Router();
 
 router.use(requireAuth);
 
+// Kept in sync by hand with the client's own recognized set (mainwindow.cpp: iconForFileName()'s
+// cppSourceExtensions/cppPlusPlusHeaderExtensions, plus the Save/Open dialog filters) -- C++
+// source, headers (plain .h and the C++-flavored variants alike), and the docs commonly kept
+// alongside C++ code. Anything else is rejected below before it reaches the database.
+const ALLOWED_EXTENSIONS = ['.cpp', '.cc', '.cxx', '.c++', '.h', '.hpp', '.hh', '.hxx', '.h++', '.md', '.txt'];
+
 // POST /files  { filename, content }
 // Create-or-update semantics, keyed on (user_id, filename) -- mirrors the one-document-per-
 // filename model the client already uses against Firestore in storage.cpp.
@@ -19,8 +25,8 @@ router.post('/', async (req, res, next) => {
   if (!filename) {
     return res.status(400).json({ error: 'filename is required' });
   }
-  if (!filename.toLowerCase().endsWith('.cpp')) {
-    return res.status(400).json({ error: 'Only .cpp files can be uploaded' });
+  if (!ALLOWED_EXTENSIONS.some((ext) => filename.toLowerCase().endsWith(ext))) {
+    return res.status(400).json({ error: `Unsupported file type. Allowed: ${ALLOWED_EXTENSIONS.join(', ')}` });
   }
 
   try {
