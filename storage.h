@@ -51,7 +51,13 @@ public:
 
     // Queues a single file for upload. Safe to call repeatedly in a loop for
     // a multi-file batch: Storage tracks how many uploads are outstanding
-    // internally and refreshes the cloud file list once the whole batch settles.
+    // internally and, once every upload queued since the last time it was
+    // idle has settled (success or failure), refreshes the cloud file list
+    // and reports how many of them succeeded via uploadBatchFinished(). If
+    // the caller pauses between uploadFile() calls (e.g. a confirmation
+    // dialog for one file in a batch) and the ones already queued finish in
+    // the meantime, that's reported as its own wave rather than held back --
+    // resuming the loop afterwards starts a fresh wave rather than waiting.
     void uploadFile(const QByteArray &fileData, const QString &localFilePath);
 
     // Called by the owner once a token refresh Storage asked for (via
@@ -78,6 +84,11 @@ private:
     QString cloudFileName = "";
 
     int pendingUploads = 0;
+
+    // How many uploads have succeeded in the current wave (reset whenever a
+    // new wave starts, i.e. uploadFile() is called while pendingUploads is
+    // 0) -- reported via uploadBatchFinished() once the wave settles.
+    int succeededUploads = 0;
 
     // Requests deferred behind an in-flight token refresh. Each one knows how
     // to redo its own exact request (retry(true)) or how to settle itself as
@@ -130,6 +141,13 @@ signals:
 
     void uploadSucceeded(const QString &localFilePath, const QString &cloudFilePath);
     void uploadFailed(const QString &localFilePath, const QString &errorString);
+
+    // Emitted once every upload queued since the current wave started has
+    // settled -- `succeededCount` is how many of them actually succeeded
+    // (may be 0 if the whole wave failed, in which case this still fires so
+    // the cloud file list still gets refreshed, but callers should treat 0
+    // as "nothing to announce" rather than showing "Uploaded 0 files").
+    void uploadBatchFinished(int succeededCount);
     void listFilesFailed(const QString &errorString);
     void downloadFailed(const QString &errorString, QObject *targetTab);
 

@@ -3,6 +3,7 @@
 #include "monacoeditor.h"
 #include "terminal.h"
 #include <QCloseEvent>
+#include <QMouseEvent>
 #include <QMessageBox>
 #include <QPushButton>
 #include <QDir>
@@ -122,8 +123,15 @@ MainWindow::MainWindow(QWidget *parent)
     // actual color (originally a hardcoded low-alpha white) is filled in by
     // applyTheme() below, since a white overlay meant to stay subtle against
     // a dark background does the opposite against a light one.
-    localFiles -> setCursor(Qt::PointingHandCursor);
-    cloudFiles -> setCursor(Qt::PointingHandCursor);
+    //
+    // Cursor is scoped to actual rows via eventFilter() rather than a plain
+    // setCursor() here -- that would cover the tree's whole viewport, hand
+    // included over the empty space below the last item, which is
+    // misleading since there's nothing to click there.
+    localFiles -> viewport() -> setMouseTracking(true);
+    cloudFiles -> viewport() -> setMouseTracking(true);
+    localFiles -> viewport() -> installEventFilter(this);
+    cloudFiles -> viewport() -> installEventFilter(this);
 
 
     localFilesArea = new QLabel("Local Files' Area");
@@ -150,6 +158,7 @@ MainWindow::MainWindow(QWidget *parent)
     connect(storage, &Storage::setDownloadFile, this, &MainWindow::onDownloadFile);
     connect(storage, &Storage::uploadSucceeded, this, &MainWindow::onUploadSucceeded);
     connect(storage, &Storage::uploadFailed, this, &MainWindow::onUploadFailed);
+    connect(storage, &Storage::uploadBatchFinished, this, &MainWindow::onUploadBatchFinished);
     connect(storage, &Storage::listFilesFailed, this, &MainWindow::onListFilesFailed);
     connect(storage, &Storage::downloadFailed, this, &MainWindow::onDownloadFailed);
     connect(storage, &Storage::tokenRefreshRequired, this, &MainWindow::onTokenRefreshRequired);
@@ -761,6 +770,42 @@ void MainWindow::closeEvent(QCloseEvent *event)
 }
 
 
+bool MainWindow::eventFilter(QObject *watched, QEvent *event)
+{
+    QTreeWidget *tree = nullptr;
+    if (watched == localFiles -> viewport())
+        tree = localFiles;
+    else if (watched == cloudFiles -> viewport())
+        tree = cloudFiles;
+
+    if (tree)
+    {
+        if (event -> type() == QEvent::MouseMove)
+        {
+            QMouseEvent *mouseEvent = static_cast<QMouseEvent*>(event);
+            bool overItem = tree -> indexAt(mouseEvent -> pos()).isValid();
+            tree -> viewport() -> setCursor(overItem ? Qt::PointingHandCursor : Qt::ArrowCursor);
+        }
+        else if (event -> type() == QEvent::Leave)
+            tree -> viewport() -> setCursor(Qt::ArrowCursor);
+    }
+
+    return QMainWindow::eventFilter(watched, event);
+}
+
+
+bool MainWindow::cloudFileExists(const QString &fileName) const
+{
+    for (int i = 0; i < cloudFiles -> topLevelItemCount(); i++)
+    {
+        if (cloudFiles -> topLevelItem(i) -> text(0) == fileName)
+            return true;
+    }
+
+    return false;
+}
+
+
 void MainWindow::on_actionUpload_triggered()
 {
     curr = qobject_cast<MonacoEditor*>(theWorkspace -> currentWidget());
@@ -775,11 +820,28 @@ void MainWindow::on_actionUpload_triggered()
             return;
         }
         on_actionSave_triggered();
+
+        // This tab isn't tracked as a cloud file (isCloudFile branch above
+        // handles that case), so its name might coincidentally match an
+        // unrelated cloud file -- cloud files are keyed on filename alone,
+        // server-side, so uploading here would silently overwrite it.
+        QString fileName = QFileInfo(curr -> property("filePath").toString()).fileName();
+        if (cloudFileExists(fileName))
+        {
+            QMessageBox::StandardButton choice = QMessageBox::question(this, "File Already Exists",
+                QString("A cloud file named \"%1\" already exists. Overwrite it?").arg(fileName),
+                QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
+
+            if (choice != QMessageBox::Yes)
+                return;
+        }
+
         storage -> uploadFile(curr -> toPlainText().toUtf8(), curr -> property("filePath").toString());
         return;
     }
 
     QStringList unreadableFiles;
+    QStringList skippedFiles;
 
     for (int i = 0; i < ls.size(); i++)
     {
@@ -792,12 +854,35 @@ void MainWindow::on_actionUpload_triggered()
             continue;
         }
 
+        QString fileName = QFileInfo(filePath).fileName();
+        if (cloudFileExists(fileName))
+        {
+            QMessageBox::StandardButton choice = QMessageBox::question(this, "File Already Exists",
+                QString("A cloud file named \"%1\" already exists. Overwrite it?").arg(fileName),
+                QMessageBox::Yes | QMessageBox::No | QMessageBox::Cancel, QMessageBox::No);
+
+            // Cancel abandons the rest of the batch outright, including any
+            // files not yet reached -- not just the colliding ones.
+            if (choice == QMessageBox::Cancel)
+                break;
+
+            if (choice == QMessageBox::No)
+            {
+                skippedFiles << fileName;
+                continue;
+            }
+        }
+
         storage -> uploadFile(openFile.readAll(), filePath);
     }
 
     if (!unreadableFiles.isEmpty())
         QMessageBox::warning(this, "Upload Failed",
             "The following files could not be read and were skipped:\n" + unreadableFiles.join("\n"));
+
+    if (!skippedFiles.isEmpty())
+        QMessageBox::information(this, "Upload Skipped",
+            "The following files already exist in the cloud and were left unchanged:\n" + skippedFiles.join("\n"));
 }
 
 void MainWindow::onSetCloudFiles(const QString &fileName, const QString &cloudFilePath)
@@ -820,8 +905,21 @@ void MainWindow::onSetCloudFiles(const QString &fileName, const QString &cloudFi
 
 void MainWindow::onUploadSucceeded(const QString &localFilePath, const QString &cloudFilePath)
 {
+    Q_UNUSED(localFilePath);
     recentlyUploadedCloudPaths.insert(cloudFilePath);
-    ui -> statusbar -> showMessage(QString("Uploaded \"%1\"").arg(QFileInfo(localFilePath).fileName()), 4000);
+    // No per-file status message here -- see onUploadBatchFinished(), which
+    // reports how many files succeeded once the whole wave settles.
+}
+
+
+void MainWindow::onUploadBatchFinished(int succeededCount)
+{
+    if (succeededCount <= 0)
+        return; // nothing succeeded in this wave -- onUploadFailed() already covers failures
+
+    ui -> statusbar -> showMessage(
+        succeededCount == 1 ? "Uploaded 1 file" : QString("Uploaded %1 files").arg(succeededCount),
+        4000);
 }
 
 

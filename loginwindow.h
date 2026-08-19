@@ -37,6 +37,20 @@ private:
     Ui::LoginWindow *ui;
     Authenticator *auth;
 
+    // Tracks the in-memory session so a repeat login with the same account
+    // can be short-circuited instead of silently redoing the whole
+    // sign-in flow -- see on_loginButton_clicked(). Not persisted: closing
+    // and reopening the app still requires a fresh login (that's a separate,
+    // not-yet-built piece of work). Reset in onSessionExpired(); will also
+    // need resetting wherever a future logout action is added.
+    bool isLoggedIn = false;
+    QString loggedInEmail;
+
+    // The email a sign-in attempt is currently in flight for -- captured at
+    // submission time so onLoginSucceeded() (which only gets idToken/uid
+    // back from Authenticator) knows what to record as loggedInEmail.
+    QString pendingEmail;
+
 signals:
     void enableActionUpload(bool flag, const QString &idToken, const QString &uid);
     void idTokenRefreshed(const QString &idToken);

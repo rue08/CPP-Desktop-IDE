@@ -9,6 +9,11 @@ router.use(requireAuth);
 // POST /files  { filename, content }
 // Create-or-update semantics, keyed on (user_id, filename) -- mirrors the one-document-per-
 // filename model the client already uses against Firestore in storage.cpp.
+//
+// A single atomic upsert, relying on the files_user_id_filename_key unique constraint
+// (migrations/002_files_unique_per_user_filename.sql) -- not a separate UPDATE followed by a
+// conditional INSERT, which left a race window where two near-simultaneous uploads of the same
+// filename could both miss the UPDATE and both INSERT, producing two rows for one file.
 router.post('/', async (req, res, next) => {
   const { filename, content } = req.body || {};
   if (!filename) {
@@ -19,25 +24,17 @@ router.post('/', async (req, res, next) => {
   }
 
   try {
-    const updated = await pool.query(
-      `UPDATE files SET content = $1, updated_at = now()
-       WHERE user_id = $2 AND filename = $3
-       RETURNING id, filename, content, updated_at`,
-      [content ?? '', req.userId, filename]
-    );
-
-    if (updated.rowCount > 0) {
-      return res.json(updated.rows[0]);
-    }
-
-    const inserted = await pool.query(
+    const { rows } = await pool.query(
       `INSERT INTO files (user_id, filename, content)
        VALUES ($1, $2, $3)
-       RETURNING id, filename, content, updated_at`,
+       ON CONFLICT (user_id, filename)
+       DO UPDATE SET content = EXCLUDED.content, updated_at = now()
+       RETURNING id, filename, content, updated_at, (xmax = 0) AS inserted`,
       [req.userId, filename, content ?? '']
     );
 
-    res.status(201).json(inserted.rows[0]);
+    const { inserted, ...file } = rows[0];
+    res.status(inserted ? 201 : 200).json(file);
   } catch (err) {
     next(err);
   }

@@ -191,6 +191,11 @@ void Storage::abandonPendingRetries()
 
 void Storage::uploadFile(const QByteArray& fileData, const QString& localFilePath)
 {
+    // pendingUploads == 0 means the previous wave (if any) has already fully
+    // settled and been reported -- this call starts a new one.
+    if (pendingUploads == 0)
+        succeededUploads = 0;
+
     pendingUploads++;
     startUpload(fileData, localFilePath);
 }
@@ -250,6 +255,7 @@ void Storage::onUploadFinished(const QByteArray &fileData, const QString& localF
     QJsonDocument jsonDocument = QJsonDocument::fromJson(response);
     QString fileId = QString::number(jsonDocument.object().value("id").toInt());
 
+    succeededUploads++;
     emit uploadSucceeded(localFilePath, fileId);
     finishPendingUpload();
 
@@ -259,10 +265,16 @@ void Storage::onUploadFinished(const QByteArray &fileData, const QString& localF
 
 void Storage::finishPendingUpload()
 {
-    // Refresh the list once every upload in the current batch has finished
-    // (successfully or not) -- never before, and never left hanging.
+    // Refresh the list and report the wave's outcome once every upload
+    // queued since it started has finished (successfully or not) -- never
+    // before, and never left hanging. If the caller queues more uploads
+    // later (e.g. resuming a batch loop after a confirmation dialog), that's
+    // a new wave -- see the pendingUploads == 0 check in uploadFile().
     if (--pendingUploads <= 0)
+    {
         listFiles();
+        emit uploadBatchFinished(succeededUploads);
+    }
 }
 
 

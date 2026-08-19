@@ -81,6 +81,11 @@ private slots:
 
     void onUploadSucceeded(const QString &localFilePath, const QString &cloudFilePath);
     void onUploadFailed(const QString &localFilePath, const QString &errorString);
+
+    // Reports how many uploads succeeded once a wave (a single upload, or a
+    // batch's worth queued back-to-back) has fully settled -- see
+    // Storage::uploadBatchFinished().
+    void onUploadBatchFinished(int succeededCount);
     void onListFilesFailed(const QString &errorString);
     void onDownloadFailed(const QString &errorString, QObject *targetTab);
 
@@ -122,6 +127,15 @@ private:
     // fallback) whose tint actually differs between themes -- see
     // applyTheme().
     QIcon iconForFileName(const QString &fileName);
+
+    // True if the cloud files tree already has a top-level entry named
+    // `fileName` -- used before uploading a *local* file for the first time
+    // to warn if it would silently overwrite an unrelated cloud file that
+    // just happens to share the same basename (cloud files are keyed on
+    // filename alone server-side, not full path). Not used for re-uploading
+    // a tab already known to be that exact cloud file (isCloudFile == true),
+    // since overwriting there is the intended action.
+    bool cloudFileExists(const QString &fileName) const;
 
     // The output_circle "this is an executable" icon shown in the local
     // files tree -- pulled out of on_actionOpen_Folder_triggered() so
@@ -199,5 +213,12 @@ private:
 
 protected:
     void closeEvent(QCloseEvent *event) override;
+
+    // Keeps the file trees' pointing-hand cursor scoped to actual rows.
+    // A plain setCursor() on the tree widget itself covers its whole
+    // viewport, hand included over the empty space below the last item --
+    // this watches localFiles'/cloudFiles' viewports and swaps the cursor
+    // based on whether indexAt() under the mouse is actually valid.
+    bool eventFilter(QObject *watched, QEvent *event) override;
 };
 #endif // MAINWINDOW_H
