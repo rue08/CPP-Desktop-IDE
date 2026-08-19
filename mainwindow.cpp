@@ -519,50 +519,87 @@ void MainWindow::on_actionSave_triggered()
         return;
     }
 
-    filePath =  curr -> property("filePath").toString();
+    bool isCloudTab = curr -> property("isCloudFile").toBool();
 
-    if (filePath == "")
+    // Cloud tabs have no real local path -- property("filePath") holds the
+    // backend's numeric file id, not a disk location. "Save" here means
+    // exporting the cloud file's current content to a new local file (e.g.
+    // to get a copy back after deleting the local original), never a sync
+    // back to the cloud -- that's what Upload is for. Always prompts for a
+    // location, pre-filled with the cloud file's name, and deliberately
+    // leaves the tab's filePath/isCloudFile properties and modified state
+    // untouched below: this is a one-off export, not a conversion, and the
+    // "unsaved changes" dot should still only ever clear once the content
+    // actually reaches the cloud (see onUploadSucceeded()).
+    QString targetPath;
+
+    if (isCloudTab)
     {
-        filePath = QFileDialog::getSaveFileName(this, "", projectFolderPath,
+        targetPath = QFileDialog::getSaveFileName(this, "",
+            QDir(projectFolderPath).filePath(curr -> property("cloudFileName").toString()),
             "C++ Source Files (*.cpp *.cc *.cxx *.c++);;"
             "Header Files (*.h *.hpp *.hh *.hxx *.h++);;"
             "Docs (*.md *.txt)");
 
-        if (filePath.isEmpty())
+        if (targetPath.isEmpty())
             return;
 
-        // Only fall back to an extension when nothing recognized was
-        // typed/chosen at all -- respects an explicit .h/.md/.txt name
-        // instead of overriding it. The fallback itself comes from
-        // whichever "New ___ File" action created this tab (newFileTab()),
-        // so a blank Markdown tab saved as bare "notes" lands on notes.md
-        // rather than always defaulting to .cpp.
-        if (iconForFileName(QFileInfo(filePath).fileName()).isNull())
+        // Cloud files are always .cpp (see the backend's upload validation),
+        // so the pre-filled name already carries the right extension --
+        // this only matters if the user typed over it with something
+        // unrecognized.
+        if (iconForFileName(QFileInfo(targetPath).fileName()).isNull())
+            targetPath += ".cpp";
+    }
+    else
+    {
+        filePath = curr -> property("filePath").toString();
+
+        if (filePath == "")
         {
-            QString defaultExtension = curr -> property("defaultExtension").toString();
-            if (defaultExtension.isEmpty())
-                defaultExtension = "cpp";
-            filePath += "." + defaultExtension;
+            filePath = QFileDialog::getSaveFileName(this, "", projectFolderPath,
+                "C++ Source Files (*.cpp *.cc *.cxx *.c++);;"
+                "Header Files (*.h *.hpp *.hh *.hxx *.h++);;"
+                "Docs (*.md *.txt)");
+
+            if (filePath.isEmpty())
+                return;
+
+            // Only fall back to an extension when nothing recognized was
+            // typed/chosen at all -- respects an explicit .h/.md/.txt name
+            // instead of overriding it. The fallback itself comes from
+            // whichever "New ___ File" action created this tab (newFileTab()),
+            // so a blank Markdown tab saved as bare "notes" lands on notes.md
+            // rather than always defaulting to .cpp.
+            if (iconForFileName(QFileInfo(filePath).fileName()).isNull())
+            {
+                QString defaultExtension = curr -> property("defaultExtension").toString();
+                if (defaultExtension.isEmpty())
+                    defaultExtension = "cpp";
+                filePath += "." + defaultExtension;
+            }
+
+            curr -> setProperty("filePath", QVariant(filePath));
+
+            info = QFileInfo(filePath);
+            theWorkspace -> setTabText(theWorkspace -> currentIndex(), info.fileName());
+
+            // Deliberately falls through to the write below instead of
+            // returning here -- this used to return right after picking a
+            // filename, which meant the very first save of a new file renamed
+            // the tab but never actually wrote it to disk.
         }
 
-        curr -> setProperty("filePath", QVariant(filePath));
-
-        info = QFileInfo(filePath);
-        theWorkspace -> setTabText(theWorkspace -> currentIndex(), info.fileName());
-
-        // Deliberately falls through to the write below instead of
-        // returning here -- this used to return right after picking a
-        // filename, which meant the very first save of a new file renamed
-        // the tab but never actually wrote it to disk.
+        targetPath = filePath;
     }
 
 
-    QFile saveFile(filePath);
+    QFile saveFile(targetPath);
 
     if (!saveFile.open(QIODevice::WriteOnly | QIODevice::Text))
     {
         QMessageBox::warning(this, "Save Failed",
-            "Couldn't write to \"" + QFileInfo(filePath).fileName() + "\":\n" + saveFile.errorString());
+            "Couldn't write to \"" + QFileInfo(targetPath).fileName() + "\":\n" + saveFile.errorString());
         return;
     }
 
@@ -572,7 +609,8 @@ void MainWindow::on_actionSave_triggered()
     saveFile.flush();
     saveFile.close();
 
-    curr -> setModified(false);
+    if (!isCloudTab)
+        curr -> setModified(false);
 }
 
 
@@ -1043,21 +1081,14 @@ void MainWindow::onSetCloudFiles(const QString &fileName, const QString &cloudFi
 
     QTreeWidgetItem* child = new QTreeWidgetItem(cloudFiles);
     child -> setText(0, fileName);
-
-    // If this file was just uploaded, show a success tick instead of the
-    // usual file icon for this one refresh, then stop tracking it.
-    if (recentlyUploadedCloudPaths.remove(cloudFilePath))
-        child -> setIcon(0, loadFileTreeIcon(":/icons/Icons/check_circle_24dp_34A853_FILL0_wght400_GRAD0_opsz24.svg"));
-    else
-        child -> setIcon(0, iconForFileName(fileName));
-
+    child -> setIcon(0, iconForFileName(fileName));
     child -> setData(0, Qt::UserRole, cloudFilePath);
 }
 
 
 void MainWindow::onUploadSucceeded(const QString &localFilePath, const QString &cloudFilePath)
 {
-    recentlyUploadedCloudPaths.insert(cloudFilePath);
+    Q_UNUSED(cloudFilePath);
     // No per-file status message here -- see onUploadBatchFinished(), which
     // reports how many files succeeded once the whole wave settles.
 

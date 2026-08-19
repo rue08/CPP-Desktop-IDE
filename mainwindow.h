@@ -215,10 +215,6 @@ private:
     // applyTheme(), which is what actually changes it.
     bool currentThemeIsDark = true;
 
-    // Cloud paths whose upload just succeeded and are waiting for the next
-    // onSetCloudFiles() pass to be shown with a success icon.
-    QSet<QString> recentlyUploadedCloudPaths;
-
     // Guards against onSessionExpired() re-entering loginWindow->exec() --
     // a cascade of requests failing against the same dead session (e.g. a
     // retried listFiles() after abandonPendingRetries()) can each emit
