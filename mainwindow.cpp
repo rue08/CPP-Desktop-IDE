@@ -748,6 +748,11 @@ void MainWindow::on_actionSettings_triggered()
     layout -> addWidget(urlEdit);
 
     QPushButton *fetchButton = new QPushButton("Fetch Latest from GitHub");
+    // Same gating as actionUpload/actionLogout/etc. -- ui->actionUpload's
+    // enabled state already doubles as the app's de facto "is logged in"
+    // flag everywhere else, so this reads it rather than tracking a second
+    // copy of the same thing.
+    fetchButton -> setEnabled(ui -> actionUpload -> isEnabled());
     layout -> addWidget(fetchButton);
 
     QLabel *statusLabel = new QLabel();
