@@ -45,6 +45,15 @@ void LoginWindow::onSessionExpired()
     emit sessionExpired();
 }
 
+
+void LoginWindow::logOut()
+{
+    isLoggedIn = false;
+    loggedInEmail.clear();
+
+    auth -> logOut();
+}
+
 LoginWindow::~LoginWindow()
 {
     delete ui;

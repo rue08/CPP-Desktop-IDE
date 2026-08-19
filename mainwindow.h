@@ -69,6 +69,8 @@ private slots:
 
     void on_actionLogin_triggered();
 
+    void on_actionLogout_triggered();
+
     void on_actionUpload_triggered();
 
     void onSetCloudFiles(const QString &fileName, const QString &cloudFilePath);

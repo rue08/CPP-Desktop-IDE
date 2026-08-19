@@ -23,6 +23,12 @@ public:
     // token had already gone stale.
     void refreshSessionNow();
 
+    // Clears the in-memory session (this session tracking, plus
+    // Authenticator's stored refresh token) on an explicit logout. Unlike
+    // onSessionExpired(), this doesn't emit sessionExpired() or reopen the
+    // login dialog -- logging out is a deliberate action, not an error state.
+    void logOut();
+
 private slots:
     void on_loginButton_clicked();
     void onLoginSucceeded(const QString &idToken, const QString &uid);

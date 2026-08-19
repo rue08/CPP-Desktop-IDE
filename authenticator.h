@@ -27,6 +27,11 @@ public:
     // already gone stale, and this is how the session recovers.
     void refreshIdToken();
 
+    // Discards the stored refresh token on an explicit logout, so it can't
+    // be used to silently resurrect the session (e.g. via refreshIdToken()
+    // being triggered by some in-flight request that hadn't settled yet).
+    void logOut();
+
 private:
     QNetworkAccessManager *networkAccessManager;
     QString apiKey;

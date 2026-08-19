@@ -126,6 +126,12 @@ void Authenticator::refreshIdToken()
 }
 
 
+void Authenticator::logOut()
+{
+    refreshToken.clear();
+}
+
+
 void Authenticator::onRefreshFinished()
 {
     QNetworkReply *reply = qobject_cast<QNetworkReply*>(sender());

@@ -67,8 +67,10 @@ MainWindow::MainWindow(QWidget *parent)
     ui -> toolBar -> addWidget(spacer);
     ui -> toolBar -> addAction(ui -> actionRun);
     ui -> toolBar -> addAction(ui -> actionLogin);
+    ui -> toolBar -> addAction(ui -> actionLogout);
     ui -> toolBar -> addAction(ui -> actionSettings);
     ui -> actionUpload -> setEnabled(false);
+    ui -> actionLogout -> setEnabled(false);
     ui -> actionUpload_File_to_Cloud -> setEnabled(false);
     ui -> actionDelete_File_from_Cloud -> setEnabled(false);
 
@@ -619,11 +621,32 @@ void MainWindow::on_actionLogin_triggered()
     loginWindow -> exec();
 }
 
+
+void MainWindow::on_actionLogout_triggered()
+{
+    loginWindow -> logOut();
+    storage -> setIdToken(QString());
+
+    ui -> actionUpload -> setEnabled(false);
+    ui -> actionLogout -> setEnabled(false);
+    ui -> actionUpload_File_to_Cloud -> setEnabled(false);
+    ui -> actionDelete_File_from_Cloud -> setEnabled(false);
+
+    cloudFiles -> clear();
+    cloudFilesStack -> setCurrentWidget(cloudFilesArea);
+
+    // Deliberately not reopening the login dialog (unlike onSessionExpired())
+    // -- this was a deliberate action, not an error state that needs fixing
+    // before the app is usable again.
+    ui -> statusbar -> showMessage("Logged out.", 3000);
+}
+
 void MainWindow::onEnableActionUpload(bool flag, const QString& idToken, const QString& uid)
 {
     Q_UNUSED(uid); // the backend derives identity from the token itself, server-side
 
     ui -> actionUpload -> setEnabled(flag);
+    ui -> actionLogout -> setEnabled(flag);
     storage -> setIdToken(idToken);
 
     // Establishes/refreshes the users row for this session before anything
@@ -642,6 +665,7 @@ void MainWindow::onBackendLoginSucceeded()
 void MainWindow::onBackendLoginFailed(const QString &errorString)
 {
     ui -> actionUpload -> setEnabled(false);
+    ui -> actionLogout -> setEnabled(false);
     statusBar() -> showMessage("Logged in successfully, but the cloud backend is unreachable.", 5000);
     QMessageBox::warning(this, "Backend Unavailable", errorString);
 }
@@ -981,6 +1005,7 @@ void MainWindow::onSessionExpired()
     storage -> abandonPendingRetries();
 
     ui -> actionUpload -> setEnabled(false);
+    ui -> actionLogout -> setEnabled(false);
     cloudFiles -> clear();
     cloudFilesStack -> setCurrentWidget(cloudFilesArea);
 
@@ -1067,6 +1092,9 @@ void MainWindow::applyTheme(bool isDark)
     ui -> actionLogin -> setIcon(QIcon(isDark
         ? ":/icons/Icons/login_24dp_FFFFFF_FILL0_wght400_GRAD0_opsz24.svg"
         : ":/icons/Icons/login_24dp_000000_FILL0_wght400_GRAD0_opsz24.svg"));
+    ui -> actionLogout -> setIcon(QIcon(isDark
+        ? ":/icons/Icons/logout_24dp_FFFFFF_FILL0_wght400_GRAD0_opsz24.svg"
+        : ":/icons/Icons/logout_24dp_000000_FILL0_wght400_GRAD0_opsz24.svg"));
     ui -> actionThe_Vault -> setIcon(QIcon(isDark
         ? ":/icons/Icons/folder_code_24dp_FFFFFF_FILL0_wght400_GRAD0_opsz24.svg"
         : ":/icons/Icons/folder_code_24dp_000000_FILL0_wght400_GRAD0_opsz24.svg"));
