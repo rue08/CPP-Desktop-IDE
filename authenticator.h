@@ -30,13 +30,41 @@ public:
     // Discards the stored refresh token on an explicit logout, so it can't
     // be used to silently resurrect the session (e.g. via refreshIdToken()
     // being triggered by some in-flight request that hadn't settled yet).
+    // Also clears the persisted copy on disk -- see the constructor.
     void logOut();
+
+    // True if a refresh token is available to use right now -- checked by
+    // LoginWindow::restoreSession() immediately after construction, when
+    // this can only mean one survived from a previous run (see the
+    // constructor, which loads it from QSettings before anything else has
+    // had a chance to sign in).
+    bool hasPersistedSession() const;
+
+    // The email persisted alongside the refresh token at the last
+    // successful sign-in -- restoreSession() uses this to restore
+    // LoginWindow's isLoggedIn/loggedInEmail bookkeeping (point 5's
+    // "Already logged in" check) across a restart, since a bare token
+    // refresh doesn't carry it.
+    QString persistedEmail() const;
 
 private:
     QNetworkAccessManager *networkAccessManager;
     QString apiKey;
 
     QString refreshToken;
+
+    // The email the current/most recent successful sign-in belongs to --
+    // set right before each signUserIn()/signUserUp() call so parseResponse()
+    // knows what to persist alongside the refresh token if it succeeds;
+    // loaded from QSettings at construction otherwise (see persistedEmail()).
+    QString sessionEmail;
+
+    // Writes refreshToken/sessionEmail to QSettings (called wherever
+    // refreshToken is updated on success -- initial sign-in and every
+    // subsequent refresh, since Firebase rotates it each time it's used) or
+    // clears them (logOut(), or a refresh actually getting rejected).
+    void persistSession();
+    void clearPersistedSession();
 
     // Guards against refreshIdToken() being invoked again while one is
     // already in flight (e.g. several requests failing on the same stale

@@ -2,6 +2,12 @@
 #include "config.h"
 #include <QUrl>
 #include <QUrlQuery>
+#include <QSettings>
+
+namespace {
+const char *REFRESH_TOKEN_SETTINGS_KEY = "session/refreshToken";
+const char *EMAIL_SETTINGS_KEY = "session/email";
+}
 
 Authenticator::Authenticator(QObject *parent)
     : QObject(parent)
@@ -10,6 +16,42 @@ Authenticator::Authenticator(QObject *parent)
     networkAccessManager = new QNetworkAccessManager(this);
 
     apiKey = FIREBASE_API_KEY;
+
+    // Whatever session (if any) survived from a previous run -- empty
+    // QSettings values just leave these blank, same as a fresh install.
+    // See hasPersistedSession()/persistedEmail(), used by
+    // LoginWindow::restoreSession().
+    QSettings settings;
+    refreshToken = settings.value(REFRESH_TOKEN_SETTINGS_KEY).toString();
+    sessionEmail = settings.value(EMAIL_SETTINGS_KEY).toString();
+}
+
+
+bool Authenticator::hasPersistedSession() const
+{
+    return !refreshToken.isEmpty();
+}
+
+
+QString Authenticator::persistedEmail() const
+{
+    return sessionEmail;
+}
+
+
+void Authenticator::persistSession()
+{
+    QSettings settings;
+    settings.setValue(REFRESH_TOKEN_SETTINGS_KEY, refreshToken);
+    settings.setValue(EMAIL_SETTINGS_KEY, sessionEmail);
+}
+
+
+void Authenticator::clearPersistedSession()
+{
+    QSettings settings;
+    settings.remove(REFRESH_TOKEN_SETTINGS_KEY);
+    settings.remove(EMAIL_SETTINGS_KEY);
 }
 
 void Authenticator::networkReplyReadyRead()
@@ -25,6 +67,7 @@ void Authenticator::networkReplyReadyRead()
 void Authenticator::signUserUp(const QString &email, const QString &password)
 {
     pendingSignUp = true;
+    sessionEmail = email;
 
     QString signUpEndpoint = "https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=";
     signUpEndpoint += apiKey;
@@ -41,6 +84,7 @@ void Authenticator::signUserUp(const QString &email, const QString &password)
 void Authenticator::signUserIn(const QString &email, const QString &password)
 {
     pendingSignUp = false;
+    sessionEmail = email;
 
     QString signInEndpoint = "https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=";
     signInEndpoint += apiKey;
@@ -98,6 +142,7 @@ void Authenticator::parseResponse(const QByteArray &response)
     QString refreshToken = object.value("refreshToken").toString();
 
     this -> refreshToken = refreshToken;
+    persistSession();
 
     emit loginSucceeded(idToken, uid);
 }
@@ -129,6 +174,7 @@ void Authenticator::refreshIdToken()
 void Authenticator::logOut()
 {
     refreshToken.clear();
+    clearPersistedSession();
 }
 
 
@@ -149,7 +195,9 @@ void Authenticator::onRefreshFinished()
     {
         // The refresh token itself was rejected: password changed elsewhere,
         // account disabled/deleted, revoked, or long unused. No way back
-        // from here except logging in again.
+        // from here except logging in again -- and no point keeping a
+        // known-dead token around to retry next launch either.
+        clearPersistedSession();
         emit sessionExpired();
         return;
     }
@@ -158,6 +206,7 @@ void Authenticator::onRefreshFinished()
     QString refreshToken = object.value("refresh_token").toString();
 
     this -> refreshToken = refreshToken;
+    persistSession(); // Firebase rotates the refresh token on each use -- keep the saved copy current
 
     emit tokenRefreshed(idToken);
 }

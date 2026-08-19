@@ -29,6 +29,14 @@ public:
     // login dialog -- logging out is a deliberate action, not an error state.
     void logOut();
 
+    // Attempts to silently restore a session saved from a previous run --
+    // call once, right after construction. No-op if Authenticator has
+    // nothing persisted (first launch, or after an explicit logout). If
+    // something *was* saved but turns out to be invalid, this surfaces
+    // exactly like a live session dying mid-use (onSessionExpired()) --
+    // status message plus the login dialog forced open.
+    void restoreSession();
+
 private slots:
     void on_loginButton_clicked();
     void onLoginSucceeded(const QString &idToken, const QString &uid);
@@ -56,6 +64,16 @@ private:
     // submission time so onLoginSucceeded() (which only gets idToken/uid
     // back from Authenticator) knows what to record as loggedInEmail.
     QString pendingEmail;
+
+    // True while a refreshIdToken() call in flight was triggered by
+    // restoreSession() specifically, rather than the ordinary reactive
+    // refresh Storage triggers mid-session (refreshSessionNow()). The two
+    // need different handling once Authenticator::tokenRefreshed() comes
+    // back: a mid-session refresh only needs to hand the new idToken to
+    // Storage (the session's already established); restoreSession() needs
+    // the full "establish a new session" treatment, same as a normal login
+    // succeeding. Checked and cleared in onTokenRefreshed().
+    bool restoringSession = false;
 
 signals:
     void enableActionUpload(bool flag, const QString &idToken, const QString &uid);

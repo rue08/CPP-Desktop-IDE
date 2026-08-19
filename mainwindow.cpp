@@ -174,6 +174,13 @@ MainWindow::MainWindow(QWidget *parent)
     connect(loginWindow, &LoginWindow::idTokenRefreshed, this, &MainWindow::onIdTokenRefreshed);
     connect(loginWindow, &LoginWindow::sessionExpired, this, &MainWindow::onSessionExpired);
 
+    // Silently signs back in from a previous run, if a session was saved --
+    // a no-op otherwise (nothing saved). Deliberately after every connect()
+    // above: the actual response only ever arrives asynchronously once the
+    // event loop is running (well after this constructor returns), but
+    // keeping it below everything it depends on avoids any doubt about that.
+    loginWindow -> restoreSession();
+
     if (!settings.contains("splitterDimensions"))
         splitter -> setSizes({100, 100});
 
@@ -744,7 +751,10 @@ void MainWindow::on_actionSettings_triggered()
 void MainWindow::on_actionRun_triggered()
 {
     if (theWorkspace -> currentIndex() == -1)
+    {
+        statusBar() -> showMessage("Select a file to execute.", 3000);
         return;
+    }
     on_actionSave_triggered();
     Terminal* myTerminal = new Terminal(this, this);
     myTerminal -> runFile();

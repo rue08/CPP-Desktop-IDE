@@ -31,6 +31,17 @@ void LoginWindow::refreshSessionNow()
 
 void LoginWindow::onTokenRefreshed(const QString &idToken)
 {
+    if (restoringSession)
+    {
+        restoringSession = false;
+        isLoggedIn = true;
+        // uid is unused downstream (the backend derives identity from the
+        // token itself -- see MainWindow::onEnableActionUpload()), and a
+        // bare token refresh doesn't carry it anyway.
+        emit enableActionUpload(true, idToken, QString());
+        return;
+    }
+
     emit idTokenRefreshed(idToken);
 }
 
@@ -38,9 +49,12 @@ void LoginWindow::onTokenRefreshed(const QString &idToken)
 void LoginWindow::onSessionExpired()
 {
     // The session actually ended -- a subsequent login, even with the same
-    // email, is a real new sign-in, not a no-op repeat.
+    // email, is a real new sign-in, not a no-op repeat. Also covers a failed
+    // restoreSession() attempt (a saved session turning out to be invalid),
+    // which reports through this exact same path.
     isLoggedIn = false;
     loggedInEmail.clear();
+    restoringSession = false;
 
     emit sessionExpired();
 }
@@ -52,6 +66,18 @@ void LoginWindow::logOut()
     loggedInEmail.clear();
 
     auth -> logOut();
+}
+
+
+void LoginWindow::restoreSession()
+{
+    if (!auth -> hasPersistedSession())
+        return;
+
+    restoringSession = true;
+    loggedInEmail = auth -> persistedEmail();
+
+    auth -> refreshIdToken();
 }
 
 LoginWindow::~LoginWindow()
