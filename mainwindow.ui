@@ -38,6 +38,9 @@
     <addaction name="separator"/>
     <addaction name="actionClose_File"/>
     <addaction name="actionClose_Folder"/>
+    <addaction name="separator"/>
+    <addaction name="actionUpload_File_to_Cloud"/>
+    <addaction name="actionDelete_File_from_Cloud"/>
    </widget>
    <widget class="QMenu" name="menuEdit">
     <property name="title">
@@ -268,6 +271,16 @@
   <action name="actionClose_Folder">
    <property name="text">
     <string>Close Folder</string>
+   </property>
+  </action>
+  <action name="actionDelete_File_from_Cloud">
+   <property name="text">
+    <string>Delete File from Cloud</string>
+   </property>
+  </action>
+  <action name="actionUpload_File_to_Cloud">
+   <property name="text">
+    <string>Upload File to Cloud</string>
    </property>
   </action>
  </widget>

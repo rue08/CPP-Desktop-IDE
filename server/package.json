@@ -1,5 +1,5 @@
 {
-  "name": "ide-backend",
+  "name": "vw-backend",
   "version": "1.0.0",
   "private": true,
   "description": "Node.js + Postgres backend for file storage, replacing Firebase Firestore/Storage. Firebase Authentication is kept as-is; this server only verifies Firebase ID tokens.",

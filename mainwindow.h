@@ -14,6 +14,7 @@
 #include "storage.h"
 #include "loginwindow.h"
 #include "monacoeditor.h"
+#include "theme.h"
 
 QT_BEGIN_NAMESPACE
 namespace Ui {
@@ -93,6 +94,14 @@ private slots:
 
     void on_actionToggle_Comment_triggered();
 
+    // Fired by QStyleHints whenever the effective color scheme changes --
+    // either the OS's own appearance flipping while the theme menu is set
+    // to "System", or setThemeMode() itself applying an explicit Light/Dark
+    // override (see theme.h). Either way, this is the single place that
+    // re-derives the effective scheme and pushes it out to the native UI
+    // and every open Monaco tab.
+    void onColorSchemeChanged();
+
 private:
     // Marks `tab`'s title with a "● " prefix while its document has unsaved
     // changes, clearing it again once saved -- looked up by pointer rather
@@ -109,8 +118,51 @@ private:
     // shared between the local "Open Folder" tree and the cloud files tree
     // so both classify extensions the same way. Falls back to a null QIcon
     // (no icon shown) for anything outside the IDE's recognized C++/docs
-    // extensions.
+    // extensions. Reads currentThemeIsDark for the one icon (the plain-text
+    // fallback) whose tint actually differs between themes -- see
+    // applyTheme().
     QIcon iconForFileName(const QString &fileName);
+
+    // The output_circle "this is an executable" icon shown in the local
+    // files tree -- pulled out of on_actionOpen_Folder_triggered() so
+    // refreshTreeIcons() can reuse the same theme-aware choice.
+    QIcon iconForExecutable();
+
+    // Loads an SVG file-tree icon such that it looks identical whether its
+    // row is selected or not. Without this, Qt's item delegate asks QIcon
+    // for a QIcon::Selected-mode pixmap on a selected row, and since a
+    // plain QIcon(path) never registers one, Qt auto-generates a
+    // desaturated/washed-out substitute -- explicitly registering the same
+    // source for both modes here means there's nothing left for it to
+    // generate. Used by iconForFileName()/iconForExecutable() and the
+    // upload-success checkmark in onSetCloudFiles(), i.e. every icon shown
+    // inside localFiles/cloudFiles.
+    static QIcon loadFileTreeIcon(const QString &path);
+
+    // Applies `mode` via Theme::setMode() and immediately re-derives and
+    // pushes the effective scheme, rather than only relying on
+    // onColorSchemeChanged() -- QStyleHints::colorSchemeChanged only fires
+    // on an actual change, so picking "Light" while the OS (and thus the
+    // prior System-mode effective scheme) is already light would otherwise
+    // leave the UI unrefreshed on first selection.
+    void setThemeMode(Theme::Mode mode);
+
+    // Pushes `isDark` out to everything that isn't palette-driven: the
+    // toolbar/menu icons (flat black/white glyphs, not tinted by QPalette),
+    // the file-tree hover overlay and placeholder-label colors, the
+    // already-populated file trees, and every open Monaco tab. QStyleHints'
+    // color scheme itself (set by setThemeMode()/Theme::setMode()) already
+    // handles ordinary native widget chrome -- this covers what it can't.
+    void applyTheme(bool isDark);
+
+    // Re-icons whatever's already in the local files tree after a theme
+    // change -- see applyTheme(). Deliberately leaves the cloud files tree
+    // alone: one of its icons can be a transient upload-success checkmark
+    // (onSetCloudFiles()) that isn't recoverable from the item alone, and
+    // the only icon that's actually theme-sensitive (the plain-text
+    // fallback) is a subtle gray-on-gray difference either way -- it
+    // corrects itself on the tree's next refresh regardless.
+    void refreshTreeIcons();
 
     Ui::MainWindow *ui;
     QStackedWidget *localFilesStack;
@@ -128,6 +180,12 @@ private:
     LoginWindow *loginWindow;
     QLabel* localFilesArea;
     QLabel* cloudFilesArea;
+
+    // Mirrors Theme::isDark() -- kept as a member (rather than re-querying
+    // Theme::isDark() every time) so iconForFileName()/iconForExecutable()
+    // can read it without needing every call site updated. Set by
+    // applyTheme(), which is what actually changes it.
+    bool currentThemeIsDark = true;
 
     // Cloud paths whose upload just succeeded and are waiting for the next
     // onSetCloudFiles() pass to be shown with a success icon.

@@ -18,6 +18,13 @@
   right size. Every Cmd/Ctrl +/-/0 change reports back via
   bridge.fontSizeChanged() so MonacoEditor can persist it for next time.
 
+  Theme works the same way for its *initial* value -- a "theme" URL query
+  param ("dark"/"light", set from Theme::isDark() -- see theme.h) picks
+  Monaco's built-in "vs-dark"/"vs" theme before its first paint. Live
+  changes after that go through bridge.themeChanged() instead (menu-driven,
+  or the OS appearance changing while set to "System"), which calls
+  monaco.editor.setTheme() directly.
+
   loadContent() (used for opening/downloading a file, i.e. "load", not
   "edit") is wrapped in suppressingFlush below so the setValue() it causes
   doesn't loop back through contentChanged and mark the tab as modified --
@@ -30,10 +37,15 @@
 <meta charset="utf-8">
 <style>
   html, body, #container { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; }
-  /* Matches Monaco's vs-dark background so there's no flash of white while
-     the AMD loader and QWebChannel handshake are still in flight. */
-  body { background: #1e1e1e; }
 </style>
+<script>
+  // Matches whichever Monaco theme is about to load (vs-dark's #1e1e1e or
+  // vs's #fffffe) so there's no flash of the wrong background while the AMD
+  // loader and QWebChannel handshake are still in flight. Set on <html>
+  // rather than <body> -- <body> doesn't exist yet this early in <head>.
+  document.documentElement.style.background =
+    new URLSearchParams(window.location.search).get("theme") === "light" ? "#fffffe" : "#1e1e1e";
+</script>
 </head>
 <body>
 <div id="container"></div>
@@ -63,6 +75,12 @@
       editor.trigger("host", actionId, null);
       editor.focus();
     });
+
+    bridge.themeChanged.connect(function(isDark) {
+      if (!editor) return;
+      monaco.editor.setTheme(isDark ? "vs-dark" : "vs");
+      document.documentElement.style.background = isDark ? "#1e1e1e" : "#fffffe";
+    });
   }
 
   var DEFAULT_FONT_SIZE = 14;
@@ -81,13 +99,15 @@
     bridge.fontSizeChanged(currentFontSize);
   }
 
+  var initialTheme = new URLSearchParams(window.location.search).get("theme") === "light" ? "vs" : "vs-dark";
+
   function initMonaco() {
     require.config({ paths: { vs: "vs" } });
     require(["vs/editor/editor.main"], function() {
       editor = monaco.editor.create(document.getElementById("container"), {
         value: "",
         language: "cpp",
-        theme: "vs-dark",
+        theme: initialTheme,
         automaticLayout: true,
         fontSize: initialFontSize,
         fontFamily: "Menlo, Consolas, 'Courier New', monospace",

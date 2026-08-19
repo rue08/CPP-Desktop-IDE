@@ -1,4 +1,4 @@
-# ide-backend
+# vw-backend
 
 Node.js + PostgreSQL backend for file storage, replacing Firebase Firestore/Storage. **Firebase
 Authentication is unchanged** — the C++ client still signs up/in/refreshes against Firebase

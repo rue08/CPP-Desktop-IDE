@@ -40,6 +40,7 @@ if(${QT_VERSION_MAJOR} GREATER_EQUAL 6)
         ${PROJECT_SOURCES}
         resources.qrc
         monacoeditor.h monacoeditor.cpp
+        theme.h theme.cpp
         terminal.h terminal.cpp
         loginwindow.h loginwindow.cpp loginwindow.ui
         authenticator.h authenticator.cpp

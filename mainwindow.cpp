@@ -13,6 +13,9 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QDialogButtonBox>
+#include <QGuiApplication>
+#include <QStyleHints>
+#include <QActionGroup>
 
 
 MainWindow::MainWindow(QWidget *parent)
@@ -20,6 +23,15 @@ MainWindow::MainWindow(QWidget *parent)
     , ui(new Ui::MainWindow)
 {
     ui->setupUi(this);
+
+    // Reapplies whatever theme mode was last chosen from the View > Theme
+    // menu -- QStyleHints's color-scheme override doesn't itself persist
+    // across process restarts, only the QSettings value backing
+    // Theme::mode() does. Also reacts live to further changes, whether from
+    // the OS's own appearance (while in "System" mode) or setThemeMode()
+    // applying an explicit override.
+    Theme::setMode(Theme::mode());
+    connect(QGuiApplication::styleHints(), &QStyleHints::colorSchemeChanged, this, &MainWindow::onColorSchemeChanged);
 
     projectFolderPath = QStringLiteral(PROJECT_ROOT_DIR);
 
@@ -56,6 +68,38 @@ MainWindow::MainWindow(QWidget *parent)
     ui -> toolBar -> addAction(ui -> actionLogin);
     ui -> toolBar -> addAction(ui -> actionSettings);
     ui -> actionUpload -> setEnabled(false);
+    ui -> actionUpload_File_to_Cloud -> setEnabled(false);
+    ui -> actionDelete_File_from_Cloud -> setEnabled(false);
+
+
+    // View > Theme -- System/Light/Dark, mutually exclusive. Built
+    // programmatically rather than in mainwindow.ui, same as the toolbar
+    // actions above, since its checked state has to be derived from
+    // Theme::mode() at startup rather than a fixed .ui default.
+    QMenu *viewMenu = ui -> menubar -> addMenu("View");
+    QMenu *themeMenu = viewMenu -> addMenu("Theme");
+
+    QAction *systemThemeAction = themeMenu -> addAction("System");
+    QAction *lightThemeAction = themeMenu -> addAction("Light");
+    QAction *darkThemeAction = themeMenu -> addAction("Dark");
+
+    QActionGroup *themeGroup = new QActionGroup(this);
+    for (QAction *action : {systemThemeAction, lightThemeAction, darkThemeAction})
+    {
+        action -> setCheckable(true);
+        themeGroup -> addAction(action);
+    }
+
+    switch (Theme::mode())
+    {
+    case Theme::Mode::Light: lightThemeAction -> setChecked(true); break;
+    case Theme::Mode::Dark: darkThemeAction -> setChecked(true); break;
+    case Theme::Mode::System: default: systemThemeAction -> setChecked(true); break;
+    }
+
+    connect(systemThemeAction, &QAction::triggered, this, [this]() { setThemeMode(Theme::Mode::System); });
+    connect(lightThemeAction, &QAction::triggered, this, [this]() { setThemeMode(Theme::Mode::Light); });
+    connect(darkThemeAction, &QAction::triggered, this, [this]() { setThemeMode(Theme::Mode::Dark); });
 
     theWorkspace -> setMovable(true);
     theWorkspace -> setTabsClosable(true);
@@ -74,13 +118,12 @@ MainWindow::MainWindow(QWidget *parent)
     // Files are double-click-to-open but previously gave zero indication of
     // that -- no cursor change, no hover feedback, same as any inert label.
     // Hand cursor matches the treatment already used on the Login button
-    // (loginwindow.ui) for other clickable things; the hover highlight is a
-    // low-alpha white overlay to stay subtle against the app's dark bg.
-    static const QString fileTreeHoverStyle = "QTreeWidget::item:hover { background: rgba(255,255,255,25); }";
+    // (loginwindow.ui) for other clickable things; the hover highlight's
+    // actual color (originally a hardcoded low-alpha white) is filled in by
+    // applyTheme() below, since a white overlay meant to stay subtle against
+    // a dark background does the opposite against a light one.
     localFiles -> setCursor(Qt::PointingHandCursor);
-    localFiles -> setStyleSheet(fileTreeHoverStyle);
     cloudFiles -> setCursor(Qt::PointingHandCursor);
-    cloudFiles -> setStyleSheet(fileTreeHoverStyle);
 
 
     localFilesArea = new QLabel("Local Files' Area");
@@ -88,14 +131,14 @@ MainWindow::MainWindow(QWidget *parent)
     localFilesArea->setAlignment(Qt::AlignCenter);
     localFilesArea->setWordWrap(true);
     localFilesArea->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
-    localFilesArea->setStyleSheet("color: rgba(255,255,255,140);");
 
     cloudFilesArea = new QLabel("Cloud Files' Area");
     cloudFilesStack -> addWidget(cloudFilesArea);
     cloudFilesArea->setAlignment(Qt::AlignCenter);
     cloudFilesArea->setWordWrap(true);
     cloudFilesArea->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
-    cloudFilesArea->setStyleSheet("color: rgba(255,255,255,140);");
+    // Both labels' muted text color is theme-dependent -- set by
+    // applyTheme() below, same reasoning as the hover style above.
 
     localFilesStack -> setCurrentWidget(localFilesArea);
     cloudFilesStack -> setCurrentWidget(cloudFilesArea);
@@ -126,6 +169,16 @@ MainWindow::MainWindow(QWidget *parent)
 
     // Remembering the previous sizes of each layout
     splitter -> restoreState(settings.value("splitterDimensions").toByteArray());
+
+    // Seeds icons/stylesheets for the initial paint -- deliberately last in
+    // the constructor, since applyTheme() touches localFilesArea/
+    // cloudFilesArea (among other things constructed above), and calling it
+    // any earlier than everything it touches exists is a use of
+    // uninitialized member pointers. Can't rely solely on
+    // onColorSchemeChanged() for this either, since Theme::setMode() near
+    // the top only emits colorSchemeChanged when the effective scheme
+    // actually changes.
+    applyTheme(Theme::isDark());
 }
 
 MainWindow::~MainWindow()
@@ -251,17 +304,39 @@ QIcon MainWindow::iconForFileName(const QString &fileName)
     QString suffix = QFileInfo(fileName).suffix().toLower();
 
     if (cppSourceExtensions.contains(suffix))
-        return QIcon(":/icons/Icons/seti_cpp_24dp_519ABA.svg");
+        return loadFileTreeIcon(":/icons/Icons/seti_cpp_24dp_519ABA.svg");
     if (suffix == "h")
-        return QIcon(":/icons/Icons/seti_h_24dp_A074C4.svg");
+        return loadFileTreeIcon(":/icons/Icons/seti_h_24dp_A074C4.svg");
     if (cppPlusPlusHeaderExtensions.contains(suffix))
-        return QIcon(":/icons/Icons/seti_hpp_24dp_A074C4.svg");
+        return loadFileTreeIcon(":/icons/Icons/seti_hpp_24dp_A074C4.svg");
     if (suffix == "md")
-        return QIcon(":/icons/Icons/seti_markdown_24dp_519ABA.svg");
+        return loadFileTreeIcon(":/icons/Icons/seti_markdown_24dp_519ABA.svg");
     if (suffix == "txt")
-        return QIcon(":/icons/Icons/seti_default_24dp_D4D7D6.svg");
+        // The one Seti icon actually swapped per-theme (see applyTheme()) --
+        // everything else above keeps its VS Code Seti color regardless of
+        // theme, same as VS Code itself does.
+        return loadFileTreeIcon(currentThemeIsDark
+            ? ":/icons/Icons/seti_default_24dp_D4D7D6.svg"
+            : ":/icons/Icons/seti_default_24dp_6E7681.svg");
 
     return QIcon();
+}
+
+
+QIcon MainWindow::iconForExecutable()
+{
+    return loadFileTreeIcon(currentThemeIsDark
+        ? ":/icons/Icons/output_circle_24dp_FFFFFF_FILL0_wght400_GRAD0_opsz24.svg"
+        : ":/icons/Icons/output_circle_24dp_000000_FILL0_wght400_GRAD0_opsz24.svg");
+}
+
+
+QIcon MainWindow::loadFileTreeIcon(const QString &path)
+{
+    QIcon icon;
+    icon.addFile(path, QSize(), QIcon::Normal);
+    icon.addFile(path, QSize(), QIcon::Selected);
+    return icon;
 }
 
 
@@ -383,7 +458,7 @@ void MainWindow::on_actionOpen_Folder_triggered()
 
         info = QFileInfo(it.filePath());
         if (info.isExecutable())
-            child -> setIcon(0, QIcon(":/icons/Icons/output_circle_24dp_FFFFFF_FILL0_wght400_GRAD0_opsz24.svg"));
+            child -> setIcon(0, iconForExecutable());
         else
             child -> setIcon(0, iconForFileName(it.fileName()));
 
@@ -735,7 +810,7 @@ void MainWindow::onSetCloudFiles(const QString &fileName, const QString &cloudFi
     // If this file was just uploaded, show a success tick instead of the
     // usual file icon for this one refresh, then stop tracking it.
     if (recentlyUploadedCloudPaths.remove(cloudFilePath))
-        child -> setIcon(0, QIcon(":/icons/Icons/check_circle_24dp_34A853_FILL0_wght400_GRAD0_opsz24.svg"));
+        child -> setIcon(0, loadFileTreeIcon(":/icons/Icons/check_circle_24dp_34A853_FILL0_wght400_GRAD0_opsz24.svg"));
     else
         child -> setIcon(0, iconForFileName(fileName));
 
@@ -864,5 +939,124 @@ void MainWindow::on_actionClose_Folder_triggered()
 
     if (localFiles -> topLevelItemCount() == 0)
         localFilesStack -> setCurrentWidget(localFilesArea);
+}
+
+
+void MainWindow::setThemeMode(Theme::Mode mode)
+{
+    Theme::setMode(mode);
+    applyTheme(Theme::isDark());
+}
+
+
+void MainWindow::onColorSchemeChanged()
+{
+    applyTheme(Theme::isDark());
+}
+
+
+void MainWindow::applyTheme(bool isDark)
+{
+    currentThemeIsDark = isDark;
+
+    // Toolbar/menu icons are flat black/white glyphs (VS Code's Seti theme
+    // has no "system-tinted" notion for these) -- swapped explicitly here
+    // rather than via QPalette, which only reaches palette-driven native
+    // widget chrome, not icon pixmaps.
+    ui -> actionSettings -> setIcon(QIcon(isDark
+        ? ":/icons/Icons/settings_24dp_FFFFFF_FILL0_wght400_GRAD0_opsz24.svg"
+        : ":/icons/Icons/settings_24dp_000000_FILL0_wght400_GRAD0_opsz24.svg"));
+    ui -> actionLogin -> setIcon(QIcon(isDark
+        ? ":/icons/Icons/login_24dp_FFFFFF_FILL0_wght400_GRAD0_opsz24.svg"
+        : ":/icons/Icons/login_24dp_000000_FILL0_wght400_GRAD0_opsz24.svg"));
+    ui -> actionThe_Vault -> setIcon(QIcon(isDark
+        ? ":/icons/Icons/folder_code_24dp_FFFFFF_FILL0_wght400_GRAD0_opsz24.svg"
+        : ":/icons/Icons/folder_code_24dp_000000_FILL0_wght400_GRAD0_opsz24.svg"));
+    ui -> actionUpload -> setIcon(QIcon(isDark
+        ? ":/icons/Icons/cloud_upload_24dp_FFFFFF_FILL0_wght400_GRAD0_opsz24.svg"
+        : ":/icons/Icons/cloud_upload_24dp_000000_FILL0_wght400_GRAD0_opsz24.svg"));
+
+    // File-tree hover overlay and the "no folder/no files open" placeholder
+    // text -- both were hardcoded white-on-dark, unreadable once the
+    // background actually goes light.
+    //
+    // The ":selected" rule below is what keeps a selected row's highlight
+    // from being clobbered by the ":hover" rule above the instant the mouse
+    // moves over it: putting any stylesheet rule on QTreeWidget::item
+    // switches Qt to CSS box-model painting for every pseudo-state of that
+    // item, selected+hovered included, and with only ":hover" defined that
+    // combined state fell through to the hover overlay instead of staying
+    // selected. ":hover" and ":selected" are equal-specificity selectors
+    // (one pseudo-class each on the same subcontrol), so on a combined
+    // selected+hovered row Qt's cascade breaks the tie in favor of whichever
+    // was declared last -- ":selected" is deliberately second here so it
+    // wins that tie, without a separate ":selected:hover" rule.
+    //
+    // Light mode uses fixed grays (VS Code's own light-theme file-explorer
+    // hover/selected colors, not macOS's native blue) rather than
+    // "palette(highlight)" -- picked deliberately, per the user, over
+    // deferring to the native highlight color, since forcing the app's
+    // color scheme (Theme::setMode(Light), see theme.h) doesn't fully
+    // replicate native rendering anyway (confirmed: explicit Light-mode
+    // selection looked visibly different from System-mode-while-the-OS-is-
+    // light, even though both are "light" and should look the same). Fixed
+    // colors sidestep that mismatch entirely, since System-with-a-light-OS
+    // and explicit Light both collapse to isDark == false here regardless.
+    // Dark mode keeps deferring to the native highlight color.
+    //
+    // "color: palette(text);" on both rules is deliberate -- only the
+    // background should ever change on hover/selection, per the user; file
+    // names should read identically to a plain unselected row. Without it,
+    // Qt's item delegate paints selected/hovered text using the palette's
+    // "inactive highlighted text" color group, which comes out as a washed-
+    // out gray rather than the normal text color. See loadFileTreeIcon() in
+    // mainwindow.h for the equivalent fix on the icon side -- Qt dims icon
+    // pixmaps for a selected row the same way unless told not to.
+    QString fileTreeHoverStyle = isDark
+        ? "QTreeWidget::item:hover { background: rgba(255,255,255,25); color: palette(text); }"
+          "QTreeWidget::item:selected { background: palette(highlight); color: palette(text); }"
+        : "QTreeWidget::item:hover { background: #E6E6E9; color: palette(text); }"
+          "QTreeWidget::item:selected { background: #D7D7D9; color: palette(text); }";
+    localFiles -> setStyleSheet(fileTreeHoverStyle);
+    cloudFiles -> setStyleSheet(fileTreeHoverStyle);
+
+    QString placeholderStyle = QString("color: rgba(%1,%1,%1,140);").arg(isDark ? 255 : 0);
+    localFilesArea -> setStyleSheet(placeholderStyle);
+    cloudFilesArea -> setStyleSheet(placeholderStyle);
+
+    refreshTreeIcons();
+
+    // Keeps every already-open Monaco tab in lockstep -- a half-and-half
+    // state (light chrome, dark editor or vice versa) is a regression, not
+    // a valid in-between.
+    for (int i = 0; i < theWorkspace -> count(); ++i)
+    {
+        MonacoEditor *tab = qobject_cast<MonacoEditor*>(theWorkspace -> widget(i));
+        if (tab)
+            tab -> applyTheme(isDark);
+    }
+}
+
+
+void MainWindow::refreshTreeIcons()
+{
+    // Only the local files tree is walked here -- see the reasoning on the
+    // refreshTreeIcons() declaration in mainwindow.h.
+    for (int i = 0; i < localFiles -> topLevelItemCount(); ++i)
+    {
+        QTreeWidgetItem *root = localFiles -> topLevelItem(i);
+        for (int j = 0; j < root -> childCount(); ++j)
+        {
+            QTreeWidgetItem *child = root -> child(j);
+            QString path = child -> data(0, Qt::UserRole).toString();
+            if (path.isEmpty())
+                continue;
+
+            if (QFileInfo(path).isExecutable())
+                child -> setIcon(0, iconForExecutable());
+            else
+                child -> setIcon(0, iconForFileName(child -> text(0)));
+        }
+    }
 }
 

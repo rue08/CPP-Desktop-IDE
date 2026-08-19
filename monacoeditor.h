@@ -37,6 +37,7 @@ signals:
     // Connected to from JS; not emitted from anywhere else in C++.
     void loadContent(const QString &text);
     void triggerAction(const QString &actionId);
+    void themeChanged(bool isDark);
 };
 
 
@@ -104,6 +105,14 @@ public:
     void cut();
     void copy();
     void paste();
+
+    // Pushes a live theme change to this tab's Monaco instance -- the
+    // View > Theme menu, or the OS appearance changing while it's set to
+    // "System" (see theme.h). The editor's *initial* paint is instead
+    // seeded via a "theme" URL query param at construction (mirrors the
+    // fontSize pattern below) so there's no flash of the wrong theme while
+    // the page/Monaco are still loading.
+    void applyTheme(bool isDark);
 
 signals:
     // Mirrors QTextDocument::modificationChanged, which is what callers

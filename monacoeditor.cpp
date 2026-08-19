@@ -1,4 +1,5 @@
 #include "monacoeditor.h"
+#include "theme.h"
 
 #include <QWebEngineView>
 #include <QWebEnginePage>
@@ -47,6 +48,12 @@ MonacoEditor::MonacoEditor(QWidget *parent)
     int savedFontSize = QSettings().value(QLatin1String(FONT_SIZE_SETTINGS_KEY), DEFAULT_FONT_SIZE).toInt();
     QUrlQuery query;
     query.addQueryItem(QStringLiteral("fontSize"), QString::number(savedFontSize));
+
+    // Same reasoning as fontSize above -- seeds Monaco's very first paint
+    // with the right theme so there's no flash of the wrong one. This is
+    // only the *initial* value; applyTheme() below is what a live change
+    // goes through instead.
+    query.addQueryItem(QStringLiteral("theme"), Theme::isDark() ? QStringLiteral("dark") : QStringLiteral("light"));
     url.setQuery(query);
 
     view->setUrl(url);
@@ -145,6 +152,18 @@ void MonacoEditor::onUserEdited(const QString &text)
 }
 
 
+void MonacoEditor::applyTheme(bool isDark)
+{
+    // No queuing needed the way loadContent()/pendingText has one -- the
+    // "theme" URL query param already gave Monaco the right theme for its
+    // very first paint, and onEditorReady() below unconditionally re-pushes
+    // the current theme anyway, so a change landing before the page is
+    // ready is simply superseded rather than lost. JS-side, bridge.
+    // themeChanged's handler no-ops if the editor isn't there yet.
+    emit bridge->themeChanged(isDark);
+}
+
+
 void MonacoEditor::onEditorReady()
 {
     editorReady = true;
@@ -154,6 +173,11 @@ void MonacoEditor::onEditorReady()
         emit bridge->loadContent(pendingText);
         hasPendingText = false;
     }
+
+    // Catches up on any theme change that happened between construction
+    // (which only seeded Monaco's *initial* paint via the "theme" URL query
+    // param) and this readiness -- see applyTheme() above.
+    emit bridge->themeChanged(Theme::isDark());
 }
 
 
