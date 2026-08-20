@@ -735,6 +735,7 @@ void MainWindow::establishBackendSession()
 
     // Establishes/refreshes the users row for this session before anything
     // else is allowed to touch /files -- see onBackendLoginSucceeded().
+    pendingBackendSuccessMessage = "Successfully logged in.";
     storage -> loginToBackend();
 }
 
@@ -745,15 +746,17 @@ void MainWindow::on_actionRetry_triggered()
     // back (or Settings was updated without going through its own OK-retries
     // path) -- reuses the exact same call establishBackendSession()/Settings
     // do, so success/failure feedback (onBackendLoginSucceeded/Failed) is
-    // identical either way.
-    statusBar() -> showMessage("Retrying the backend connection...", 3000);
+    // identical either way, aside from the success message below. No interim
+    // "Retrying..." message -- loginToBackend() usually resolves fast enough
+    // that it just gets instantly stomped on by the real result anyway.
+    pendingBackendSuccessMessage = "Successfully refreshed.";
     storage -> loginToBackend();
 }
 
 
 void MainWindow::onBackendLoginSucceeded()
 {
-    statusBar() -> showMessage("Successfully logged in.", 2000);
+    statusBar() -> showMessage(pendingBackendSuccessMessage, 2000);
     storage -> listFiles();
 }
 
@@ -842,7 +845,10 @@ void MainWindow::on_actionSettings_triggered()
     // signed in, this is what actually retries against the new URL.
     if (ui -> actionUpload -> isEnabled())
     {
-        statusBar() -> showMessage("Reconnecting to the backend...", 3000);
+        // No interim "Reconnecting..." message -- same reasoning as
+        // on_actionRetry_triggered(): it just gets stomped on instantly by
+        // the real result on anything but a slow/failing connection.
+        pendingBackendSuccessMessage = "Successfully reconnected.";
         storage -> loginToBackend();
     }
 }

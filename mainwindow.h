@@ -203,12 +203,17 @@ private:
     // actually reach the backend. If a backend URL is already saved, this is
     // just storage->loginToBackend(). If not -- a fresh install, or a device
     // that's never had Settings configured -- there's nothing to try yet, so
-    // this fetches the current URL first (no login required for that call
-    // itself) and only then logs in, instead of leaving the user stuck with
-    // no way to get a URL in (see on_actionSettings_triggered()'s Fetch
-    // button, which used to be disabled until this same login succeeded --
-    // exactly the deadlock this sidesteps).
+    // this just says so and waits: the user fetches/enters a URL via
+    // Settings (Fetch is enabled now that they're signed in) and either hits
+    // Retry or OK, both of which retry on their own.
     void establishBackendSession();
+
+    // What onBackendLoginSucceeded() shows -- set by whichever of
+    // establishBackendSession()/on_actionRetry_triggered()/
+    // on_actionSettings_triggered() is about to call loginToBackend(), since
+    // "logged in" is only accurate for the first of those; the other two are
+    // reconnecting an already-established session, not starting a new one.
+    QString pendingBackendSuccessMessage;
 
     Ui::MainWindow *ui;
     QStackedWidget *localFilesStack;
