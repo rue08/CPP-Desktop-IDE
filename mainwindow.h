@@ -73,6 +73,13 @@ private slots:
 
     void on_actionUpload_triggered();
 
+    // Manually retries the backend connection (loginToBackend(), which
+    // on_actionSettings_triggered() already reuses after a URL change) --
+    // lives right below Upload in the toolbar for when the backend was
+    // unreachable and has since come back, or the URL was just fixed via
+    // Settings, without needing to reopen Settings again just to trigger it.
+    void on_actionRetry_triggered();
+
     // File menu equivalents of the toolbar Upload button and (new)
     // cloud-file deletion -- see mainwindow.cpp for what each does.
     void on_actionUpload_File_to_Cloud_triggered();
@@ -191,6 +198,17 @@ private:
     // fallback) is a subtle gray-on-gray difference either way -- it
     // corrects itself on the tree's next refresh regardless.
     void refreshTreeIcons();
+
+    // Called right after a successful sign-in (onEnableActionUpload()) to
+    // actually reach the backend. If a backend URL is already saved, this is
+    // just storage->loginToBackend(). If not -- a fresh install, or a device
+    // that's never had Settings configured -- there's nothing to try yet, so
+    // this fetches the current URL first (no login required for that call
+    // itself) and only then logs in, instead of leaving the user stuck with
+    // no way to get a URL in (see on_actionSettings_triggered()'s Fetch
+    // button, which used to be disabled until this same login succeeded --
+    // exactly the deadlock this sidesteps).
+    void establishBackendSession();
 
     Ui::MainWindow *ui;
     QStackedWidget *localFilesStack;

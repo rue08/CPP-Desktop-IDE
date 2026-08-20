@@ -70,6 +70,7 @@ MainWindow::MainWindow(QWidget *parent)
     ui -> toolBar -> addAction(ui -> actionLogout);
     ui -> toolBar -> addAction(ui -> actionSettings);
     ui -> actionUpload -> setEnabled(false);
+    ui -> actionRetry -> setEnabled(false);
     ui -> actionLogout -> setEnabled(false);
     ui -> actionUpload_File_to_Cloud -> setEnabled(false);
     ui -> actionDelete_File_from_Cloud -> setEnabled(false);
@@ -687,6 +688,7 @@ void MainWindow::on_actionLogout_triggered()
     storage -> setIdToken(QString());
 
     ui -> actionUpload -> setEnabled(false);
+    ui -> actionRetry -> setEnabled(false);
     ui -> actionLogout -> setEnabled(false);
     ui -> actionUpload_File_to_Cloud -> setEnabled(false);
     ui -> actionDelete_File_from_Cloud -> setEnabled(false);
@@ -705,13 +707,46 @@ void MainWindow::onEnableActionUpload(bool flag, const QString& idToken, const Q
     Q_UNUSED(uid); // the backend derives identity from the token itself, server-side
 
     ui -> actionUpload -> setEnabled(flag);
+    ui -> actionRetry -> setEnabled(flag);
     ui -> actionLogout -> setEnabled(flag);
     ui -> actionUpload_File_to_Cloud -> setEnabled(flag);
     ui -> actionDelete_File_from_Cloud -> setEnabled(flag);
     storage -> setIdToken(idToken);
 
+    if (flag)
+        establishBackendSession();
+}
+
+
+void MainWindow::establishBackendSession()
+{
+    QString backendUrl = settings.value("backendUrl").toString();
+    if (backendUrl.isEmpty())
+    {
+        // No backend URL saved yet -- a fresh install, or Settings was never
+        // opened on this machine. Nothing to try loginToBackend() against,
+        // so don't fail loudly against an empty URL -- wait for the user to
+        // fetch/enter one via Settings (Fetch is enabled now that they're
+        // signed in) and hit Retry, or OK, which retries automatically --
+        // see on_actionSettings_triggered().
+        statusBar() -> showMessage("Signed in. Set your backend URL in Settings to sync files.", 5000);
+        return;
+    }
+
     // Establishes/refreshes the users row for this session before anything
     // else is allowed to touch /files -- see onBackendLoginSucceeded().
+    storage -> loginToBackend();
+}
+
+
+void MainWindow::on_actionRetry_triggered()
+{
+    // Manual retry, for when the backend was unreachable and has since come
+    // back (or Settings was updated without going through its own OK-retries
+    // path) -- reuses the exact same call establishBackendSession()/Settings
+    // do, so success/failure feedback (onBackendLoginSucceeded/Failed) is
+    // identical either way.
+    statusBar() -> showMessage("Retrying the backend connection...", 3000);
     storage -> loginToBackend();
 }
 
@@ -725,10 +760,12 @@ void MainWindow::onBackendLoginSucceeded()
 
 void MainWindow::onBackendLoginFailed(const QString &errorString)
 {
-    ui -> actionUpload -> setEnabled(false);
-    ui -> actionLogout -> setEnabled(false);
-    ui -> actionUpload_File_to_Cloud -> setEnabled(false);
-    ui -> actionDelete_File_from_Cloud -> setEnabled(false);
+    // Deliberately doesn't touch actionUpload/actionLogout/etc. -- the
+    // backend being unreachable says nothing about whether the sign-in
+    // itself (Firebase/Google) is still valid, which is what those actually
+    // track. Disabling them here used to also disable actionRetry and
+    // actionLogout, trapping the user: unable to retry *or* log out until
+    // the backend happened to come back on its own.
     statusBar() -> showMessage("Logged in successfully, but the cloud backend is unreachable.", 5000);
     QMessageBox::warning(this, "Backend Unavailable", errorString);
 }
@@ -748,10 +785,10 @@ void MainWindow::on_actionSettings_triggered()
     layout -> addWidget(urlEdit);
 
     QPushButton *fetchButton = new QPushButton("Fetch Latest from GitHub");
-    // Same gating as actionUpload/actionLogout/etc. -- ui->actionUpload's
-    // enabled state already doubles as the app's de facto "is logged in"
-    // flag everywhere else, so this reads it rather than tracking a second
-    // copy of the same thing.
+    // Gating this on actionUpload's enabled state is only safe now that
+    // onBackendLoginFailed() no longer disables it -- actionUpload being
+    // enabled now genuinely tracks "signed in", nothing else, so this can't
+    // get stuck disabled by a backend outage the way it used to.
     fetchButton -> setEnabled(ui -> actionUpload -> isEnabled());
     layout -> addWidget(fetchButton);
 
@@ -798,6 +835,16 @@ void MainWindow::on_actionSettings_triggered()
 
     settings.setValue("backendUrl", newUrl);
     storage -> setBackendUrl(newUrl);
+
+    // setBackendUrl() alone doesn't hit any endpoint -- without this, a
+    // change made here (fetched or typed in) sits unused until the next full
+    // logout/login, which is the "need a refresh button" gap: already being
+    // signed in, this is what actually retries against the new URL.
+    if (ui -> actionUpload -> isEnabled())
+    {
+        statusBar() -> showMessage("Reconnecting to the backend...", 3000);
+        storage -> loginToBackend();
+    }
 }
 
 
@@ -1194,6 +1241,7 @@ void MainWindow::onSessionExpired()
     storage -> abandonPendingRetries();
 
     ui -> actionUpload -> setEnabled(false);
+    ui -> actionRetry -> setEnabled(false);
     ui -> actionLogout -> setEnabled(false);
     ui -> actionUpload_File_to_Cloud -> setEnabled(false);
     ui -> actionDelete_File_from_Cloud -> setEnabled(false);
@@ -1292,6 +1340,9 @@ void MainWindow::applyTheme(bool isDark)
     ui -> actionUpload -> setIcon(QIcon(isDark
         ? ":/icons/Icons/cloud_upload_24dp_FFFFFF_FILL0_wght400_GRAD0_opsz24.svg"
         : ":/icons/Icons/cloud_upload_24dp_000000_FILL0_wght400_GRAD0_opsz24.svg"));
+    ui -> actionRetry -> setIcon(QIcon(isDark
+        ? ":/icons/Icons/refresh_24dp_FFFFFF_FILL0_wght400_GRAD0_opsz24.svg"
+        : ":/icons/Icons/refresh_24dp_000000_FILL0_wght400_GRAD0_opsz24.svg"));
 
     // File-tree hover overlay and the "no folder/no files open" placeholder
     // text -- both were hardcoded white-on-dark, unreadable once the
