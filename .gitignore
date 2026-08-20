@@ -34,3 +34,8 @@ windows/mingw64/
 # small bridge page that loads it, *is* tracked -- only this vendored part
 # is gitignored.)
 third_party/monaco/
+
+# Real Google OAuth client secret -- GitHub's push protection blocks commits
+# containing it. Copy secrets.h.example (tracked) to secrets.h and fill in
+# the real value locally; config.h includes it.
+secrets.h

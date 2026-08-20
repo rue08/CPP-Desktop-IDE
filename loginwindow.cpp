@@ -16,7 +16,6 @@ LoginWindow::LoginWindow(MainWindow *mainWindow, QWidget *parent)
     auth = new Authenticator(this);
 
     connect(auth, &Authenticator::loginFailed, this, &LoginWindow::onLoginFailed);
-    connect(auth, &Authenticator::signUpFailed, this, &LoginWindow::onSignUpFailed);
     connect(auth, &Authenticator::loginSucceeded, this, &LoginWindow::onLoginSucceeded);
     connect(auth, &Authenticator::tokenRefreshed, this, &LoginWindow::onTokenRefreshed);
     connect(auth, &Authenticator::sessionExpired, this, &LoginWindow::onSessionExpired);
@@ -48,10 +47,10 @@ void LoginWindow::onTokenRefreshed(const QString &idToken)
 
 void LoginWindow::onSessionExpired()
 {
-    // The session actually ended -- a subsequent login, even with the same
-    // email, is a real new sign-in, not a no-op repeat. Also covers a failed
-    // restoreSession() attempt (a saved session turning out to be invalid),
-    // which reports through this exact same path.
+    // The session actually ended -- a subsequent login is a real new
+    // sign-in, not a no-op repeat. Also covers a failed restoreSession()
+    // attempt (a saved session turning out to be invalid), which reports
+    // through this exact same path.
     isLoggedIn = false;
     loggedInEmail.clear();
     restoringSession = false;
@@ -85,49 +84,22 @@ LoginWindow::~LoginWindow()
     delete ui;
 }
 
-void LoginWindow::on_loginButton_clicked()
+void LoginWindow::on_googleSignInButton_clicked()
 {
-    QString email = ui -> lineEdit_email -> text();
-    QString password = ui -> lineEdit_password -> text();
-
-    // Same account as the one already signed in this session -- nothing to
-    // do, and no need to round-trip Firebase to find that out. A *different*
-    // account is deliberately left to fall through below (switches session).
-    if (isLoggedIn && email.trimmed().compare(loggedInEmail, Qt::CaseInsensitive) == 0)
-    {
-        mainWindow -> statusBar() -> showMessage("Already logged in.", 3000);
-        close();
-        return;
-    }
-
-    pendingEmail = email;
-    auth -> signUserIn(email, password);
+    mainWindow -> statusBar() -> showMessage("Waiting for Google sign-in in your browser...", 5000);
+    auth -> signInWithGoogle();
 }
 
-void LoginWindow::onLoginSucceeded(const QString &idToken, const QString &uid)
+void LoginWindow::onLoginSucceeded(const QString &idToken, const QString &uid, const QString &email)
 {
     isLoggedIn = true;
-    loggedInEmail = pendingEmail;
+    loggedInEmail = email;
 
     emit enableActionUpload(true, idToken, uid);
     close();
 }
 
-void LoginWindow::on_signUpButton_clicked()
-{
-    QString email = ui -> lineEdit_email -> text();
-    QString password = ui -> lineEdit_password -> text();
-
-    auth -> signUserUp(email, password);
-}
-
 void LoginWindow::onLoginFailed()
 {
-    mainWindow -> statusBar() -> showMessage("Incorrect email/password.", 2000);
+    mainWindow -> statusBar() -> showMessage("Google sign-in failed. Please try again.", 3000);
 }
-
-void LoginWindow::onSignUpFailed(const QString &message)
-{
-    mainWindow -> statusBar() -> showMessage(message, 4000);
-}
-

@@ -3,19 +3,22 @@
 #include <QUrl>
 #include <QUrlQuery>
 #include <QSettings>
+#include <QDesktopServices>
+#include <QRandomGenerator>
+#include <QCryptographicHash>
 
 namespace {
 const char *REFRESH_TOKEN_SETTINGS_KEY = "session/refreshToken";
 const char *EMAIL_SETTINGS_KEY = "session/email";
+
+const char *GOOGLE_AUTH_ENDPOINT = "https://accounts.google.com/o/oauth2/v2/auth";
+const char *GOOGLE_TOKEN_ENDPOINT = "https://oauth2.googleapis.com/token";
 }
 
 Authenticator::Authenticator(QObject *parent)
     : QObject(parent)
-    , apiKey(QString())
 {
     networkAccessManager = new QNetworkAccessManager(this);
-
-    apiKey = FIREBASE_API_KEY;
 
     // Whatever session (if any) survived from a previous run -- empty
     // QSettings values just leave these blank, same as a fresh install.
@@ -54,97 +57,212 @@ void Authenticator::clearPersistedSession()
     settings.remove(EMAIL_SETTINGS_KEY);
 }
 
-void Authenticator::networkReplyReadyRead()
+
+QString Authenticator::randomUrlSafeToken(int numBytes)
 {
-    QNetworkReply* reply = qobject_cast<QNetworkReply*>(sender());
+    QByteArray bytes(numBytes, Qt::Uninitialized);
+    for (int i = 0; i < numBytes; ++i)
+        bytes[i] = static_cast<char>(QRandomGenerator::global()->bounded(256));
 
-    QByteArray response = reply -> readAll();
-    parseResponse(response);
-
-    reply -> deleteLater();
+    return QString::fromLatin1(bytes.toBase64(QByteArray::Base64UrlEncoding | QByteArray::OmitTrailingEquals));
 }
 
-void Authenticator::signUserUp(const QString &email, const QString &password)
+
+QString Authenticator::pkceChallenge(const QString &verifier)
 {
-    pendingSignUp = true;
-    sessionEmail = email;
-
-    QString signUpEndpoint = "https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=";
-    signUpEndpoint += apiKey;
-    QVariantMap payload;
-    payload["email"] = email;
-    payload["password"] = password;
-    payload["returnSecureToken"] = true;
-
-    QJsonDocument jsonPayload = QJsonDocument::fromVariant(payload);
-
-    performPOST(signUpEndpoint, jsonPayload);
+    QByteArray hash = QCryptographicHash::hash(verifier.toUtf8(), QCryptographicHash::Sha256);
+    return QString::fromLatin1(hash.toBase64(QByteArray::Base64UrlEncoding | QByteArray::OmitTrailingEquals));
 }
 
-void Authenticator::signUserIn(const QString &email, const QString &password)
+
+void Authenticator::signInWithGoogle()
 {
-    pendingSignUp = false;
-    sessionEmail = email;
+    // Only one sign-in flow at a time -- a second click while one's already
+    // waiting on the browser just restarts it against a fresh server/state.
+    teardownLoopbackServer();
 
-    QString signInEndpoint = "https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=";
-    signInEndpoint += apiKey;
-    QVariantMap payload;
-    payload["email"] = email;
-    payload["password"] = password;
-    payload["returnSecureToken"] = true;
+    loopbackServer = new QTcpServer(this);
+    if (!loopbackServer->listen(QHostAddress::LocalHost, 0))
+    {
+        teardownLoopbackServer();
+        emit loginFailed();
+        return;
+    }
+    connect(loopbackServer, &QTcpServer::newConnection, this, &Authenticator::onLoopbackNewConnection);
 
-    QJsonDocument jsonPayload = QJsonDocument::fromVariant(payload);
+    pendingState = randomUrlSafeToken(16);
+    pendingCodeVerifier = randomUrlSafeToken(32);
 
-    performPOST(signInEndpoint, jsonPayload);
+    QUrl authUrl(GOOGLE_AUTH_ENDPOINT);
+    QUrlQuery query;
+    query.addQueryItem("client_id", GOOGLE_OAUTH_CLIENT_ID);
+    query.addQueryItem("redirect_uri", QString("http://127.0.0.1:%1").arg(loopbackServer->serverPort()));
+    query.addQueryItem("response_type", "code");
+    query.addQueryItem("scope", "openid email profile");
+    query.addQueryItem("code_challenge", pkceChallenge(pendingCodeVerifier));
+    query.addQueryItem("code_challenge_method", "S256");
+    query.addQueryItem("state", pendingState);
+    // Forces the account chooser every time rather than silently reusing
+    // whatever Google session happens to already be active in the browser.
+    query.addQueryItem("prompt", "select_account");
+    authUrl.setQuery(query);
+
+    QDesktopServices::openUrl(authUrl);
 }
 
-void Authenticator::performPOST(const QString &url, const QJsonDocument &payload)
+
+void Authenticator::teardownLoopbackServer()
 {
-    QNetworkRequest newRequest{QUrl(url)};
-    newRequest.setHeader(QNetworkRequest::ContentTypeHeader, QString("application/json"));
+    if (!loopbackServer)
+        return;
 
-    QNetworkReply* reply = networkAccessManager -> post(newRequest, payload.toJson());
-
-    connect(reply, &QNetworkReply::finished, this, &Authenticator::networkReplyReadyRead);
+    loopbackServer->close();
+    loopbackServer->deleteLater();
+    loopbackServer = nullptr;
+    loopbackBuffer.clear();
 }
 
-void Authenticator::parseResponse(const QByteArray &response)
+
+void Authenticator::onLoopbackNewConnection()
 {
+    QTcpSocket *socket = loopbackServer->nextPendingConnection();
+    if (!socket)
+        return;
+
+    connect(socket, &QTcpSocket::readyRead, this, &Authenticator::onLoopbackSocketReadyRead);
+}
+
+
+void Authenticator::onLoopbackSocketReadyRead()
+{
+    QTcpSocket *socket = qobject_cast<QTcpSocket*>(sender());
+    if (!socket)
+        return;
+
+    loopbackBuffer.append(socket->readAll());
+
+    // GET requests carry no body -- the request line alone (terminated by
+    // the first \r\n) is enough to read the redirect's query string. Wait
+    // for more data if it hasn't fully arrived yet.
+    int lineEnd = loopbackBuffer.indexOf("\r\n");
+    if (lineEnd < 0)
+        return;
+
+    QByteArray requestLine = loopbackBuffer.left(lineEnd);
+    QList<QByteArray> parts = requestLine.split(' ');
+    QString path = parts.size() >= 2 ? QString::fromUtf8(parts.at(1)) : QString();
+
+    QUrlQuery query(QUrl("http://127.0.0.1" + path).query());
+
+    static const QByteArray responseBody =
+        "<html><body><p>Signed in -- you can close this tab.</p></body></html>";
+    QByteArray httpResponse = "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nConnection: close\r\nContent-Length: "
+        + QByteArray::number(responseBody.size()) + "\r\n\r\n" + responseBody;
+    socket->write(httpResponse);
+    socket->flush();
+    socket->disconnectFromHost();
+    socket->deleteLater();
+
+    QString code = query.queryItemValue("code");
+    QString state = query.queryItemValue("state");
+    QString error = query.queryItemValue("error");
+    QString redirectUri = QString("http://127.0.0.1:%1").arg(loopbackServer->serverPort());
+
+    teardownLoopbackServer();
+
+    // A mismatched/missing state means this request didn't actually come
+    // from the authorization request we just sent -- treat it the same as
+    // any other failure rather than trusting the code.
+    if (!error.isEmpty() || code.isEmpty() || state != pendingState)
+    {
+        emit loginFailed();
+        return;
+    }
+
+    exchangeGoogleAuthCode(code, redirectUri);
+}
+
+
+void Authenticator::exchangeGoogleAuthCode(const QString &code, const QString &redirectUri)
+{
+    QUrlQuery body;
+    body.addQueryItem("client_id", GOOGLE_OAUTH_CLIENT_ID);
+    body.addQueryItem("client_secret", GOOGLE_OAUTH_CLIENT_SECRET);
+    body.addQueryItem("code", code);
+    body.addQueryItem("code_verifier", pendingCodeVerifier);
+    body.addQueryItem("grant_type", "authorization_code");
+    body.addQueryItem("redirect_uri", redirectUri);
+
+    QNetworkRequest request{QUrl(GOOGLE_TOKEN_ENDPOINT)};
+    request.setHeader(QNetworkRequest::ContentTypeHeader, QString("application/x-www-form-urlencoded"));
+
+    QNetworkReply *reply = networkAccessManager->post(request, body.query(QUrl::FullyEncoded).toUtf8());
+    connect(reply, &QNetworkReply::finished, this, &Authenticator::onGoogleTokenExchangeFinished);
+}
+
+
+void Authenticator::onGoogleTokenExchangeFinished()
+{
+    QNetworkReply *reply = qobject_cast<QNetworkReply*>(sender());
+    QByteArray response = reply->readAll();
+    reply->deleteLater();
+
     QJsonDocument jsonDocument = QJsonDocument::fromJson(response);
     QJsonObject object = jsonDocument.object();
 
-    // Read and clear up front -- this response belongs to whichever request
-    // is currently in flight, and that's over as of this call either way.
-    bool wasSignUp = pendingSignUp;
-    pendingSignUp = false;
+    if (!jsonDocument.isObject() || object.contains("error") || !object.contains("id_token"))
+    {
+        emit loginFailed();
+        return;
+    }
+
+    signInToFirebaseWithGoogleIdToken(object.value("id_token").toString());
+}
+
+
+void Authenticator::signInToFirebaseWithGoogleIdToken(const QString &googleIdToken)
+{
+    QString endpoint = "https://identitytoolkit.googleapis.com/v1/accounts:signInWithIdp?key=";
+    endpoint += FIREBASE_API_KEY;
+
+    QVariantMap payload;
+    payload["postBody"] = "id_token=" + googleIdToken + "&providerId=google.com";
+    payload["requestUri"] = "http://localhost";
+    payload["returnSecureToken"] = true;
+
+    QNetworkRequest request{QUrl(endpoint)};
+    request.setHeader(QNetworkRequest::ContentTypeHeader, QString("application/json"));
+
+    QNetworkReply *reply = networkAccessManager->post(request, QJsonDocument::fromVariant(payload).toJson());
+    connect(reply, &QNetworkReply::finished, this, &Authenticator::onFirebaseGoogleSignInFinished);
+}
+
+
+void Authenticator::onFirebaseGoogleSignInFinished()
+{
+    QNetworkReply *reply = qobject_cast<QNetworkReply*>(sender());
+    QByteArray response = reply->readAll();
+    reply->deleteLater();
+
+    QJsonDocument jsonDocument = QJsonDocument::fromJson(response);
+    QJsonObject object = jsonDocument.object();
 
     // A transport failure (offline, timeout, DNS) can leave `response` empty
-    // or non-JSON, which used to fall through and emit loginSucceeded with
-    // blank credentials. Require a real idToken before treating this as success.
+    // or non-JSON -- require a real idToken before treating this as success.
     if (!jsonDocument.isObject() || object.contains("error") || !object.contains("idToken"))
     {
-        // Sign-in and sign-up failures are otherwise identical here (both
-        // just land on the generic "Incorrect email/password." message) --
-        // EMAIL_EXISTS is the one case worth calling out specifically, since
-        // that message is actively wrong for it. Firebase shapes this as
-        // {"error": {"message": "EMAIL_EXISTS", ...}}.
-        QString errorCode = object.value("error").toObject().value("message").toString();
-
-        if (wasSignUp && errorCode == "EMAIL_EXISTS")
-            emit signUpFailed("An account with this email already exists.");
-        else
-            emit loginFailed();
+        emit loginFailed();
         return;
     }
 
     QString idToken = object.value("idToken").toString();
     QString uid = object.value("localId").toString();
-    QString refreshToken = object.value("refreshToken").toString();
 
-    this -> refreshToken = refreshToken;
+    refreshToken = object.value("refreshToken").toString();
+    sessionEmail = object.value("email").toString();
     persistSession();
 
-    emit loginSucceeded(idToken, uid);
+    emit loginSucceeded(idToken, uid, sessionEmail);
 }
 
 
@@ -154,7 +272,7 @@ void Authenticator::refreshIdToken()
         return;
     refreshInProgress = true;
 
-    QString refreshEndpoint = "https://securetoken.googleapis.com/v1/token?key=" + apiKey;
+    QString refreshEndpoint = "https://securetoken.googleapis.com/v1/token?key=" + FIREBASE_API_KEY;
 
     // Unlike every other Firebase Auth call here, this endpoint takes a
     // form-encoded body, not JSON.
@@ -165,7 +283,7 @@ void Authenticator::refreshIdToken()
     QNetworkRequest request{QUrl(refreshEndpoint)};
     request.setHeader(QNetworkRequest::ContentTypeHeader, QString("application/x-www-form-urlencoded"));
 
-    QNetworkReply *reply = networkAccessManager -> post(request, body.query(QUrl::FullyEncoded).toUtf8());
+    QNetworkReply *reply = networkAccessManager->post(request, body.query(QUrl::FullyEncoded).toUtf8());
 
     connect(reply, &QNetworkReply::finished, this, &Authenticator::onRefreshFinished);
 }
@@ -181,8 +299,8 @@ void Authenticator::logOut()
 void Authenticator::onRefreshFinished()
 {
     QNetworkReply *reply = qobject_cast<QNetworkReply*>(sender());
-    QByteArray response = reply -> readAll();
-    reply -> deleteLater();
+    QByteArray response = reply->readAll();
+    reply->deleteLater();
 
     refreshInProgress = false;
 
@@ -190,13 +308,13 @@ void Authenticator::onRefreshFinished()
     QJsonObject object = jsonDocument.object();
 
     // This endpoint's response uses snake_case field names, unlike the
-    // sign-in/sign-up endpoints' camelCase -- same values, different keys.
+    // sign-in endpoints' camelCase -- same values, different keys.
     if (!jsonDocument.isObject() || object.contains("error") || !object.contains("id_token"))
     {
-        // The refresh token itself was rejected: password changed elsewhere,
-        // account disabled/deleted, revoked, or long unused. No way back
-        // from here except logging in again -- and no point keeping a
-        // known-dead token around to retry next launch either.
+        // The refresh token itself was rejected: account disabled/deleted,
+        // revoked, or long unused. No way back from here except signing in
+        // again -- and no point keeping a known-dead token around to retry
+        // next launch either.
         clearPersistedSession();
         emit sessionExpired();
         return;
@@ -205,7 +323,7 @@ void Authenticator::onRefreshFinished()
     QString idToken = object.value("id_token").toString();
     QString refreshToken = object.value("refresh_token").toString();
 
-    this -> refreshToken = refreshToken;
+    this->refreshToken = refreshToken;
     persistSession(); // Firebase rotates the refresh token on each use -- keep the saved copy current
 
     emit tokenRefreshed(idToken);

@@ -18,7 +18,7 @@ Cloud backup has made personal files effortless to access and sync across machin
 - **Language**: C++
 - **Framework**: Qt (Widgets + Network + WebEngine + WebChannel)
 - **Editor**: [Monaco Editor](https://microsoft.github.io/monaco-editor/), embedded via `QWebEngineView`
-- **Auth**: Firebase Authentication
+- **Auth**: Firebase Authentication (Google sign-in only)
 - **File storage**: [Node.js + PostgreSQL backend](server/) (`server/`) — Firebase ID tokens in,
   files out; no Firestore/Cloud Storage involved. One instance is hosted centrally for you, see
   **Cloud Backend** below — you never need to run this yourself.
@@ -123,7 +123,7 @@ outside contributions at this stage.
 
 1. **Point the app at the backend** — click ⚙️ **Settings** in the toolbar and enter the
    current backend URL (see **Cloud Backend** above). Only needed once, or whenever the URL changes.
-2. **Sign up / log in** — click the login icon in the toolbar and create an account with an email and password. This is what ties your files to you across machines; once you're signed in, the app keeps you signed in on future launches too, so this is normally a one-time step per machine.
+2. **Sign in with Google** — click the login icon in the toolbar and sign in with your Google account (a browser tab opens for the Google consent screen). This is what ties your files to you across machines; once you're signed in, the app keeps you signed in on future launches too, so this is normally a one-time step per machine.
 3. **Create or open a file** — `Ctrl+N` for a new file, `Ctrl+O` to open an existing one, or "Open Folder..." to work across a whole project.
 4. **Write and save** — `Ctrl+S` saves locally, same as any editor.
 5. **Run it** — hit the ▶️ **Run** button to compile and execute the current file with `g++`; output opens in a terminal window.

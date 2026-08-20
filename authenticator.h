@@ -8,6 +8,8 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QVariant>
+#include <QTcpServer>
+#include <QTcpSocket>
 
 class Authenticator : public QObject
 {
@@ -16,15 +18,18 @@ class Authenticator : public QObject
 public:
     explicit Authenticator(QObject *parent = nullptr);
 
-
-    void setAPIKey(const QString &key);
-    void networkReplyReadyRead();
-    void signUserUp(const QString &email, const QString &password);
-    void signUserIn(const QString &email, const QString &password);
+    // Starts a Google sign-in: opens the system browser at Google's consent
+    // screen and spins up a one-shot local HTTP server on 127.0.0.1 to catch
+    // the redirect (the "loopback" flow from Google's "Using OAuth 2.0 for
+    // Desktop Apps" guide). See onLoopbackSocketReadyRead() for the rest of
+    // the chain: it hands the returned code to exchangeGoogleAuthCode(),
+    // which hands Google's id_token to signInToFirebaseWithGoogleIdToken().
+    void signInWithGoogle();
 
     // Exchanges the stored refresh token for a new idToken. Only ever called
     // reactively -- Storage reports a request failed because the token had
-    // already gone stale, and this is how the session recovers.
+    // already gone stale, and this is how the session recovers. Works
+    // regardless of which provider the session originally signed in with.
     void refreshIdToken();
 
     // Discards the stored refresh token on an explicit logout, so it can't
@@ -42,22 +47,42 @@ public:
 
     // The email persisted alongside the refresh token at the last
     // successful sign-in -- restoreSession() uses this to restore
-    // LoginWindow's isLoggedIn/loggedInEmail bookkeeping (point 5's
-    // "Already logged in" check) across a restart, since a bare token
-    // refresh doesn't carry it.
+    // LoginWindow's isLoggedIn/loggedInEmail bookkeeping across a restart,
+    // since a bare token refresh doesn't carry it.
     QString persistedEmail() const;
 
 private:
     QNetworkAccessManager *networkAccessManager;
-    QString apiKey;
 
     QString refreshToken;
 
-    // The email the current/most recent successful sign-in belongs to --
-    // set right before each signUserIn()/signUserUp() call so parseResponse()
-    // knows what to persist alongside the refresh token if it succeeds;
-    // loaded from QSettings at construction otherwise (see persistedEmail()).
+    // The email of the current/most recent successful sign-in -- read
+    // straight out of Firebase's response (see onFirebaseGoogleSignInFinished()),
+    // not something the caller provides up front the way the old
+    // email/password flow did.
     QString sessionEmail;
+
+    // The one-shot local server used to catch Google's OAuth redirect --
+    // torn down as soon as it's served its single expected request (or a
+    // new sign-in is started before that happens). Null whenever no sign-in
+    // is in flight.
+    QTcpServer *loopbackServer = nullptr;
+
+    // Accumulates bytes for the in-flight loopback connection until a full
+    // request line has arrived.
+    QByteArray loopbackBuffer;
+
+    // CSRF guard: generated fresh in signInWithGoogle(), checked against the
+    // "state" query param on the loopback redirect in
+    // onLoopbackSocketReadyRead() before the code is trusted.
+    QString pendingState;
+
+    // PKCE code_verifier for the in-flight sign-in -- generated alongside
+    // pendingState, its hash sent as code_challenge in the authorization
+    // request, then sent in the clear in exchangeGoogleAuthCode(). This is
+    // what makes a stolen auth code (e.g. another local process racing our
+    // loopback server) useless on its own.
+    QString pendingCodeVerifier;
 
     // Writes refreshToken/sessionEmail to QSettings (called wherever
     // refreshToken is updated on success -- initial sign-in and every
@@ -71,34 +96,41 @@ private:
     // token in quick succession).
     bool refreshInProgress = false;
 
-    // signUserUp() and signUserIn() share performPOST()/parseResponse(), so
-    // this is how parseResponse() tells which request just failed -- only
-    // relevant for picking EMAIL_EXISTS out of a sign-up failure specifically
-    // (see parseResponse()). Set right before the request goes out, read and
-    // cleared as soon as the response comes back.
-    bool pendingSignUp = false;
-
-    void performPOST(const QString &url, const QJsonDocument &payload);
-    void parseResponse(const QByteArray &response);
     void onRefreshFinished();
 
-signals:
-    void loginSucceeded(const QString &idToken, const QString &uid);
-    void loginFailed();
+    // Closes and discards loopbackServer (if any) -- called both to clean up
+    // after a completed/failed flow and defensively at the start of a new
+    // signInWithGoogle() call.
+    void teardownLoopbackServer();
 
-    // A sign-up specifically failed because the email is already registered.
-    // Firebase's signIn/signUp responses are otherwise handled identically
-    // (see parseResponse()) -- this is the one case worth telling apart, since
-    // "Incorrect email/password" is actively misleading for it.
-    void signUpFailed(const QString &message);
+    void onLoopbackNewConnection();
+    void onLoopbackSocketReadyRead();
+
+    void exchangeGoogleAuthCode(const QString &code, const QString &redirectUri);
+    void onGoogleTokenExchangeFinished();
+
+    void signInToFirebaseWithGoogleIdToken(const QString &googleIdToken);
+    void onFirebaseGoogleSignInFinished();
+
+    // Cryptographically random, URL-safe token generator -- used for both
+    // pendingState and pendingCodeVerifier (with different lengths).
+    static QString randomUrlSafeToken(int numBytes);
+
+    // PKCE code_challenge (base64url(sha256(verifier))) for a given
+    // code_verifier, per RFC 7636.
+    static QString pkceChallenge(const QString &verifier);
+
+signals:
+    void loginSucceeded(const QString &idToken, const QString &uid, const QString &email);
+    void loginFailed();
 
     // A new idToken is ready -- an on-demand refresh, triggered by Storage
     // hitting a stale token, succeeded.
     void tokenRefreshed(const QString &idToken);
 
-    // The refresh token itself was rejected (password changed elsewhere,
-    // account disabled/deleted, explicitly revoked, or long unused). There's
-    // no recovery from this short of logging in again.
+    // The refresh token itself was rejected (account disabled/deleted,
+    // explicitly revoked, or long unused). There's no recovery from this
+    // short of signing in again.
     void sessionExpired();
 };
 

@@ -38,11 +38,9 @@ public:
     void restoreSession();
 
 private slots:
-    void on_loginButton_clicked();
-    void onLoginSucceeded(const QString &idToken, const QString &uid);
-    void on_signUpButton_clicked();
+    void on_googleSignInButton_clicked();
+    void onLoginSucceeded(const QString &idToken, const QString &uid, const QString &email);
     void onLoginFailed();
-    void onSignUpFailed(const QString &message);
     void onTokenRefreshed(const QString &idToken);
     void onSessionExpired();
 
@@ -51,19 +49,12 @@ private:
     Ui::LoginWindow *ui;
     Authenticator *auth;
 
-    // Tracks the in-memory session so a repeat login with the same account
-    // can be short-circuited instead of silently redoing the whole
-    // sign-in flow -- see on_loginButton_clicked(). Not persisted: closing
-    // and reopening the app still requires a fresh login (that's a separate,
-    // not-yet-built piece of work). Reset in onSessionExpired(); will also
-    // need resetting wherever a future logout action is added.
+    // Tracks the in-memory session -- reset in onSessionExpired(), set on a
+    // successful sign-in. Not persisted: closing and reopening the app still
+    // requires restoreSession() to succeed (see below); this flag just backs
+    // the "already logged in" bookkeeping between those two.
     bool isLoggedIn = false;
     QString loggedInEmail;
-
-    // The email a sign-in attempt is currently in flight for -- captured at
-    // submission time so onLoginSucceeded() (which only gets idToken/uid
-    // back from Authenticator) knows what to record as loggedInEmail.
-    QString pendingEmail;
 
     // True while a refreshIdToken() call in flight was triggered by
     // restoreSession() specifically, rather than the ordinary reactive
