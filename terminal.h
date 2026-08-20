@@ -15,12 +15,15 @@ class Terminal : public QWidget
 public:
     explicit Terminal(MainWindow *mainWindow, QWidget *parent = nullptr);
 
-    // Make this public so MainWindow can call it
-    void runFile();
+    // Compiles and runs `filePath` -- resolved by MainWindow beforehand
+    // (see MainWindow::resolveRunnablePath()), since only it knows how to
+    // turn a cloud tab (which has no real local path of its own) into an
+    // actual file on disk. filePath must be non-empty and already written
+    // with the tab's current content.
+    void runFile(const QString &filePath);
 
 private slots:
     QString operatingSystem();
-    void getFileName();
 
 private:
     MainWindow *mainWindow;

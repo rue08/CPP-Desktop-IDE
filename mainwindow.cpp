@@ -861,9 +861,63 @@ void MainWindow::on_actionRun_triggered()
         statusBar() -> showMessage("Select a file to execute.", 3000);
         return;
     }
-    on_actionSave_triggered();
+
+    QString runPath = resolveRunnablePath();
+    if (runPath.isEmpty())
+        return;
+
     Terminal* myTerminal = new Terminal(this, this);
-    myTerminal -> runFile();
+    myTerminal -> runFile(runPath);
+}
+
+
+QString MainWindow::resolveRunnablePath()
+{
+    curr = qobject_cast<MonacoEditor*>(theWorkspace -> currentWidget());
+
+    if (!curr -> property("isCloudFile").toBool())
+    {
+        // Unchanged: local tabs go through the normal Save flow (which only
+        // prompts if this is a brand-new, never-saved tab) and then run
+        // whatever filePath that leaves behind -- empty if that save was
+        // cancelled, same as before this refactor.
+        on_actionSave_triggered();
+        return curr -> property("filePath").toString();
+    }
+
+    QString runPath = curr -> property("localRunPath").toString();
+
+    if (runPath.isEmpty())
+    {
+        runPath = QFileDialog::getSaveFileName(this, "",
+            QDir(projectFolderPath).filePath(curr -> property("cloudFileName").toString()),
+            "C++ Source Files (*.cpp *.cc *.cxx *.c++);;"
+            "Header Files (*.h *.hpp *.hh *.hxx *.h++);;"
+            "Docs (*.md *.txt)");
+
+        if (runPath.isEmpty())
+            return QString();
+
+        if (iconForFileName(QFileInfo(runPath).fileName()).isNull())
+            runPath += ".cpp";
+
+        curr -> setProperty("localRunPath", runPath);
+    }
+
+    QFile runFile(runPath);
+    if (!runFile.open(QIODevice::WriteOnly | QIODevice::Text))
+    {
+        QMessageBox::warning(this, "Run Failed",
+            "Couldn't write to \"" + QFileInfo(runPath).fileName() + "\":\n" + runFile.errorString());
+        return QString();
+    }
+
+    QTextStream out(&runFile);
+    out << curr -> toPlainText();
+    runFile.flush();
+    runFile.close();
+
+    return runPath;
 }
 
 

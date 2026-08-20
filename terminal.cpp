@@ -41,10 +41,17 @@ bool Terminal::isSafeForShellInterpolation(const QString &value, QString *errorO
     return true;
 }
 
-void Terminal::runFile()
+void Terminal::runFile(const QString &filePath)
 {
-    // 1. Get current file info
-    getFileName();
+    // 1. Get current file info -- filePath comes fully resolved from
+    // MainWindow::resolveRunnablePath(), which is what actually knows
+    // whether the current tab is a local file (real filePath property) or a
+    // cloud one (no real local path -- resolved to a local export copy
+    // instead). See its comment for why this can't just be read back off
+    // the tab's own property the way it used to be.
+    path = filePath;
+    QFileInfo fi(path);
+    name = fi.fileName();
     if (path.isEmpty() || name.isEmpty()) return;
 
     QString outputName = name;
@@ -152,10 +159,3 @@ void Terminal::runFile()
     QProcess::startDetached(fullCommand, arguments);
 }
 
-void Terminal::getFileName()
-{
-    mainWindow -> curr = qobject_cast<MonacoEditor*>(mainWindow -> theWorkspace -> currentWidget());
-    path = mainWindow -> curr -> property("filePath").toString();
-    QFileInfo fi(path);
-    name = fi.fileName();
-}

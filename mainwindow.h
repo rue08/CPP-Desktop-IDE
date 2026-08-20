@@ -140,6 +140,26 @@ private:
     // saves without typing one of its own (see on_actionSave_triggered()).
     void newFileTab(const QString &titlePrefix, const QString &defaultExtension);
 
+    // Figures out an actual local file path for on_actionRun_triggered() to
+    // hand Terminal::runFile() -- Terminal itself has no notion of cloud
+    // tabs. For a local tab this is just the normal Save flow (prompting
+    // only if it's a brand-new, never-saved tab) followed by its filePath.
+    //
+    // A cloud tab has no real local path at all -- property("filePath")
+    // holds the backend's numeric file id, not a disk location (see
+    // on_actionSave_triggered()'s "one-off export" comment) -- so the first
+    // Run on a given cloud tab prompts for where to put a local copy, same
+    // as a brand-new local tab's first save, and remembers it afterward in
+    // the "localRunPath" property so every later Run on that same tab just
+    // rewrites that same file instead of prompting again. Deliberately
+    // separate from Save's own cloud-export path, which always prompts --
+    // Run shouldn't interrupt with a dialog on every single click.
+    //
+    // Returns an empty string if there's nothing runnable yet (a save/export
+    // was cancelled, or writing the file failed) -- on_actionRun_triggered()
+    // treats that as "nothing to do", not an error of its own.
+    QString resolveRunnablePath();
+
     // Picks the file-tree icon for a given file name by its extension --
     // shared between the local "Open Folder" tree and the cloud files tree
     // so both classify extensions the same way. Falls back to a null QIcon
