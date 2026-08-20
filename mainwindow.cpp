@@ -556,7 +556,13 @@ void MainWindow::on_actionSave_triggered()
     {
         filePath = curr -> property("filePath").toString();
 
-        if (filePath == "")
+        // Also re-prompts if the remembered path no longer points at a real
+        // file (deleted externally since the last save) -- QFile's
+        // WriteOnly mode creates a missing file rather than failing, so
+        // without this check the next save would just silently resurrect it
+        // at the exact same location instead of letting the user pick
+        // somewhere else.
+        if (filePath == "" || !QFileInfo::exists(filePath))
         {
             filePath = QFileDialog::getSaveFileName(this, "", projectFolderPath,
                 "C++ Source Files (*.cpp *.cc *.cxx *.c++);;"
@@ -887,7 +893,10 @@ QString MainWindow::resolveRunnablePath()
 
     QString runPath = curr -> property("localRunPath").toString();
 
-    if (runPath.isEmpty())
+    // Same reasoning as on_actionSave_triggered()'s equivalent check: also
+    // re-prompt if the remembered copy was deleted externally, rather than
+    // silently resurrecting it at the exact same spot.
+    if (runPath.isEmpty() || !QFileInfo::exists(runPath))
     {
         runPath = QFileDialog::getSaveFileName(this, "",
             QDir(projectFolderPath).filePath(curr -> property("cloudFileName").toString()),
