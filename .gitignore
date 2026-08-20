@@ -35,7 +35,8 @@ windows/mingw64/
 # is gitignored.)
 third_party/monaco/
 
-# Real Google OAuth client secret -- GitHub's push protection blocks commits
-# containing it. Copy secrets.h.example (tracked) to secrets.h and fill in
-# the real value locally; config.h includes it.
-secrets.h
+# Real Firebase/Google OAuth config -- GOOGLE_OAUTH_CLIENT_SECRET's GOCSPX-...
+# shape trips GitHub's push protection, and there's no external contributor
+# audience for the rest of it either (see README's Getting Started). Copy
+# config.h.example (tracked) to config.h and fill in real values locally.
+config.h

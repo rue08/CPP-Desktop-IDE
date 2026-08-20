@@ -1,0 +1,16 @@
+#ifndef CONFIG_H
+#define CONFIG_H
+
+#include <QString>
+
+// Copy this file to config.h (gitignored) and fill in real values:
+// - FIREBASE_API_KEY: Firebase Console -> Project settings -> General ->
+//   your Web API key.
+// - GOOGLE_OAUTH_CLIENT_ID / GOOGLE_OAUTH_CLIENT_SECRET: Google Cloud
+//   Console -> APIs & Services -> Credentials -> your "Desktop app" OAuth
+//   client.
+const QString FIREBASE_API_KEY = "TODO_PASTE_FIREBASE_API_KEY_HERE";
+const QString GOOGLE_OAUTH_CLIENT_ID = "TODO_PASTE_CLIENT_ID_HERE";
+const QString GOOGLE_OAUTH_CLIENT_SECRET = "TODO_PASTE_CLIENT_SECRET_HERE";
+
+#endif // CONFIG_H
