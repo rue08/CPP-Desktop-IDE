@@ -27,7 +27,7 @@ Cloud backup has made personal files effortless to access and sync across machin
 
 ## Getting Started
 
-Download the latest build from the [Releases page](https://github.com/rue08/CPP-Desktop-IDE/releases/latest) — both macOS and Windows builds are self-contained, no separate compiler or Qt install needed.
+Download the latest build from the [Releases page](https://github.com/rue08/CPP-Desktop-IDE/releases) — both macOS and Windows builds are self-contained, no separate compiler or Qt install needed.
 
 **macOS**
 1. Open the `.dmg` and drag `VaultWright.app` out to Applications (or anywhere else) — don't run it from inside the mounted image.
@@ -35,7 +35,9 @@ Download the latest build from the [Releases page](https://github.com/rue08/CPP-
 
 **Windows**
 1. Unzip the download wherever you like.
-2. Run `VaultWright.exe` directly.
+2. First launch: if you see **"Windows protected your PC"** (Microsoft Defender SmartScreen) —
+   expected, since the app isn't code-signed yet — click **More info**, then **Run anyway**.
+3. Run `VaultWright.exe` directly.
 
 Sign-in works out of the box once installed. Cloud file storage talks to a central backend
 that's already running for you — nothing to set up on your end, just point the app at it (see
