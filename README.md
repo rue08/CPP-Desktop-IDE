@@ -1,4 +1,4 @@
-# C++ Desktop IDE
+# VaultWright
 
 ## Overview
 A lightweight, self-contained **C++ IDE** built to solve a simple problem: your code should be as easy to pick up from anywhere as your photos or documents already are.
@@ -27,70 +27,19 @@ Cloud backup has made personal files effortless to access and sync across machin
 
 ## Getting Started
 
-There's no packaged release yet — the project is still being polished before a first public
-release, so building from source is currently the only way to run it.
+Download the latest build from the [Releases page](https://github.com/rue08/CPP-Desktop-IDE/releases/latest) — both macOS and Windows builds are self-contained, no separate compiler or Qt install needed.
 
-Sign-up/login works out of the box once built. Cloud file storage talks to a central backend
+**macOS**
+1. Open the `.dmg` and drag `VaultWright.app` out to Applications (or anywhere else) — don't run it from inside the mounted image.
+2. First launch: **right-click → Open** (not a plain double-click) — the app isn't signed/notarized yet, so Gatekeeper will warn "unidentified developer." Right-click → Open gives an "Open anyway" option a plain double-click doesn't.
+
+**Windows**
+1. Unzip the download wherever you like.
+2. Run `VaultWright.exe` directly.
+
+Sign-in works out of the box once installed. Cloud file storage talks to a central backend
 that's already running for you — nothing to set up on your end, just point the app at it (see
 **Cloud Backend** below).
-
-### Build from source
-
-The build uses whatever C++ compiler is already on your machine (e.g. an existing MinGW/g++ on
-Windows) — see [`windows/README.md`](windows/README.md) if you'd rather bundle a compiler in
-alongside the build instead of relying on `PATH`.
-
-**Prerequisites**
-- [Qt](https://www.qt.io/download-qt-installer) (Qt 6 recommended, Qt 5 also supported) with the
-  **Widgets**, **Network**, **WebEngine**, **WebChannel**, and **Positioning** modules — none of
-  the last three are installed by default, so add them explicitly in the Qt Maintenance Tool /
-  online installer's component list. Two gotchas that aren't obvious from the installer UI:
-  - **WebEngine isn't built for every Qt patch release** — under Extensions → Qt WebEngine, only
-    specific patch versions are offered (e.g. 6.10.3, not 6.10.1). If your installed Qt patch
-    version isn't one of them, install one that is (same minor version, e.g. 6.10.x) rather than
-    trying to force WebEngine onto a version it wasn't built for.
-  - **Qt Positioning is a WebEngine dependency**, not an optional extra — it's under the base Qt
-    version's own "Additional Libraries" list (not under Extensions), and `Qt6WebEngineCore`
-    won't configure without it.
-- CMake 3.16+
-- A C++17 compiler (`g++` or Clang) on `PATH`
-- Node.js + `npm` on `PATH` — only needed once, to vendor the editor (see step 2 below)
-- [Qt Creator](https://www.qt.io/product/development-tools) — optional, but the simplest way to get Qt and build in one step
-
-**Build**
-
-1. Clone the repo:
-   ```bash
-   git clone https://github.com/rue08/CPP-Desktop-IDE.git
-   cd CPP-Desktop-IDE
-   ```
-
-2. Vendor the embedded editor (one-time; see [`third_party/README.md`](third_party/README.md)):
-   ```bash
-   third_party/fetch-monaco.sh
-   ```
-
-3. Build it, either way:
-
-   **Using Qt Creator** (easiest)
-   - File → Open Project → select `CMakeLists.txt`
-   - Let it configure the kit, then hit **Run** ▶️ in the bottom-left corner.
-
-   **From the command line**
-   ```bash
-   cmake -B build -DCMAKE_PREFIX_PATH=<path-to-your-Qt-install>   # e.g. ~/Qt/6.10.3/macos
-   cmake --build build
-   ```
-   On Windows, pass the generator explicitly and run this from the Qt-provided MinGW command
-   prompt (Start Menu → "Qt \<version\> (MinGW 64-bit)"), not a plain `cmd.exe` — otherwise
-   CMake defaults to looking for MSVC's `nmake`, which won't be on `PATH`, and configuration
-   fails before it ever reaches your compiler:
-   ```bat
-   cmake -B build -G "MinGW Makefiles" -DCMAKE_PREFIX_PATH="C:\Qt\6.11.1\mingw_64"
-   cmake --build build
-   ```
-
-4. Launch the built `VaultWright` binary.
 
 ## Cloud Backend
 
@@ -138,7 +87,7 @@ The main aim is to build a full-featured project, and it's under active developm
 1. More robust file handling, including uploading whole folders (currently limited to individual code files).
 2. Continued UI/UX improvements.
 3. An integrated terminal.
-4. Booklet of Profile options.
+4. A full-time operational backend.
 
 ## Author
 Mehul Sharma\

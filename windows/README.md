@@ -1,17 +1,21 @@
 # Bundling MinGW-w64 for Windows
 
-**Already have a C++ compiler on `PATH`** (an existing MinGW/g++ install)?
-You don't need anything on this page — just build from source per the main
-[README](../README.md#build-from-source) and it'll be picked up
-automatically. This doc is only relevant if you want your build to be a
-self-contained package that needs no compiler installed at all, whether
-that's a one-off release you're packaging for others or just wanting your
-own local build to work the same way.
+**Building locally and already have a C++ compiler on `PATH`** (an existing
+MinGW/g++ install)? You don't need anything on this page for that — it'll be
+picked up automatically. This doc only matters for producing an actual
+release build — the kind meant for someone downloading it from the Releases
+page with nothing else installed.
 
 The Windows build of VaultWright looks for a compiler at `mingw64/bin/g++.exe`
 next to `VaultWright.exe` before falling back to whatever `g++` is on `PATH`
 (see `Terminal::runFile()` in `terminal.cpp`). Bundling one here means end
 users can hit Run with no separate compiler install.
+
+**Do this before the first `cmake -B build`, not after.** `CMakeLists.txt`
+checks whether this folder exists during *configure*, not build — place it
+too late and the copy step never gets added at all, silently, with no error
+either way. If you already configured without it, delete `build/` and
+reconfigure rather than just rebuilding.
 
 ## One-time setup (per machine building a release)
 
