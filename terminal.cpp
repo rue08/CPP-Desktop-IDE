@@ -6,6 +6,11 @@
 #include <QFile>
 #include <QStandardPaths>
 #include <QStatusBar>
+#include <QMessageBox>
+
+#if defined(Q_OS_WIN)
+#include <windows.h>
+#endif
 
 Terminal::Terminal(MainWindow *mainWindow, QWidget *parent)
     : QWidget(parent),
@@ -68,8 +73,20 @@ void Terminal::runFile(const QString &filePath)
         return;
     }
 
-    QString fullCommand;
-    QStringList arguments;
+    // Both the .bat (Windows) and trailer-script (macOS) temp files below
+    // used to be named from applicationPid() alone, which is constant for
+    // the app's whole lifetime -- every Run click overwrote the exact same
+    // file. Harmless if the previous run had already finished, but if an
+    // earlier console window was still actively executing that file (a slow
+    // compile, or a long-running program) when Run was clicked again, this
+    // run's write would land on a file the previous window's interpreter is
+    // still reading -- cmd.exe in particular reads .bat files incrementally,
+    // seeking through the file as it executes rather than loading it fully
+    // upfront, so overwriting it mid-run can genuinely corrupt whatever that
+    // still-running window does next. Appended here so every call gets its
+    // own file regardless of what's still in flight from an earlier one.
+    static int runCounter = 0;
+    QString runId = QString("%1_%2").arg(QCoreApplication::applicationPid()).arg(++runCounter);
 
 #if defined(Q_OS_WIN)
     // --- Windows ---
@@ -82,9 +99,16 @@ void Terminal::runFile(const QString &filePath)
 
     if (compiler.isEmpty())
     {
-        mainWindow -> statusBar() -> showMessage(
-            "No C++ compiler found. This build doesn't include the bundled MinGW-w64 toolchain, "
-            "and none was found on PATH.", 6000);
+        // A dialog, not just a status bar message -- this is the most likely
+        // reason Run silently does "nothing" from a user's perspective (no
+        // new window ever appears), and a fleeting statusbar line at the
+        // bottom of the window is easy to miss entirely if what you're
+        // actually watching for is a console window popping up.
+        QMessageBox::warning(mainWindow, "No Compiler Found",
+            "No C++ compiler found.\n\n"
+            "Expected a bundled one at \"" + bundledGpp + "\", and none was found on PATH either. "
+            "See windows/README.md for bundling MinGW-w64, or install it yourself and make sure "
+            "g++ is on PATH.");
         return;
     }
 
@@ -117,7 +141,7 @@ void Terminal::runFile(const QString &filePath)
     QString batContents = QString("cd /d \"%1\"\n\"%2\" \"%3\" -o \"%4.exe\" && \"%4.exe\"\n")
                                .arg(nativePath, compiler, name, outputName);
 
-    QString batPath = QDir::tempPath() + QString("/ide_run_%1.bat").arg(QCoreApplication::applicationPid());
+    QString batPath = QDir::tempPath() + QString("/ide_run_%1.bat").arg(runId);
     QFile batFile(batPath);
     if (!batFile.open(QIODevice::WriteOnly | QIODevice::Truncate | QIODevice::Text))
     {
@@ -127,16 +151,64 @@ void Terminal::runFile(const QString &filePath)
     batFile.write(batContents.toUtf8());
     batFile.close();
 
-    // Launch a new console window running cmd.exe. /k (rather than /c)
-    // keeps the window open once the batch file finishes, whether it
-    // succeeded or not, so compile errors and program output both stay
-    // visible instead of the window vanishing immediately. The argument here
-    // is just one plain path -- no embedded quotes for /K's parsing to trip
-    // over, unlike the inline command string this replaced.
-    fullCommand = "cmd.exe";
-    arguments << "/k" << QDir::toNativeSeparators(batPath);
+    // Launched directly via a configured QProcess rather than
+    // QProcess::startDetached(fullCommand, arguments) (the shared call at
+    // the bottom of this function, still used by the macOS branch below) --
+    // Windows needs setCreateProcessArgumentsModifier() to fix two things
+    // Qt's own defaults get wrong for a GUI app spawning a console
+    // subprocess, neither of which the earlier `cmd /c start ""` wrapper
+    // trick actually fixed (confirmed against Qt 6.10's qprocess_win.cpp):
+    //
+    // 1. QProcessPrivate::startProcess()/startDetached() both compute
+    //    `dwCreationFlags = (GetConsoleWindow() ? 0 : CREATE_NO_WINDOW)` --
+    //    since VaultWright.exe is a GUI app with no console of its own,
+    //    that's *always* CREATE_NO_WINDOW here, meaning Qt explicitly asks
+    //    Windows not to give the child any window at all. (The `start`
+    //    wrapper got a window anyway because `start` is cmd.exe's own
+    //    builtin, doing its own separate CreateProcess call for its target
+    //    that ignores whatever flags launched the outer cmd.exe.)
+    // 2. QProcessPrivate::createStartupInfo() *always* sets
+    //    STARTF_USESTDHANDLES, falling back to this process's own
+    //    GetStdHandle() values when nothing was explicitly redirected --
+    //    and a GUI app's standard handles are invalid/NULL. Passed through
+    //    to CreateProcess as-is, that poisons the whole descendant chain's
+    //    stdout (cmd.exe -> g++.exe -> the compiled program itself) with a
+    //    handle that doesn't point at any real console, *regardless* of
+    //    whether the process otherwise got a new console window -- which is
+    //    exactly what the `start` wrapper's window showed: compiling and
+    //    launching genuinely succeeded, but nothing the compiled program
+    //    itself printed ever reached it, because it wasn't writing to that
+    //    window's buffer at all.
+    //
+    // Clearing STARTF_USESTDHANDLES here lets the new console's own default
+    // I/O apply instead of the explicitly-passed broken handles, and
+    // CREATE_NEW_CONSOLE (replacing CREATE_NO_WINDOW) is what actually
+    // guarantees a fresh, visible window regardless of whatever console
+    // context launched VaultWright itself (Explorer, a shortcut, or a
+    // debugger/IDE that already attaches its own console for output
+    // capture, like Qt Creator's Application Output pane) -- no more need
+    // to route through `start` as an indirect way to get one.
+    QProcess consoleProcess;
+    consoleProcess.setProgram("cmd.exe");
+    consoleProcess.setArguments({"/k", QDir::toNativeSeparators(batPath)});
+    consoleProcess.setCreateProcessArgumentsModifier([](QProcess::CreateProcessArguments *args) {
+        args -> flags &= ~static_cast<unsigned long>(CREATE_NO_WINDOW);
+        args -> flags |= CREATE_NEW_CONSOLE;
+        args -> startupInfo -> dwFlags &= ~STARTF_USESTDHANDLES;
+        args -> inheritHandles = false;
+    });
+
+    if (!consoleProcess.startDetached())
+    {
+        mainWindow -> statusBar() -> showMessage(
+            "Couldn't launch a console window to run this file.", 6000);
+    }
+    return;
 #else
     // --- macOS ---
+    QString fullCommand;
+    QStringList arguments;
+
     if (QStandardPaths::findExecutable("g++").isEmpty())
     {
         mainWindow -> statusBar() -> showMessage(
@@ -171,7 +243,7 @@ void Terminal::runFile(const QString &filePath)
         "read\n"
     );
 
-    QString trailerPath = QDir::tempPath() + QString("/ide_run_trailer_%1.sh").arg(QCoreApplication::applicationPid());
+    QString trailerPath = QDir::tempPath() + QString("/ide_run_trailer_%1.sh").arg(runId);
     QFile trailerFile(trailerPath);
     if (!trailerFile.open(QIODevice::WriteOnly | QIODevice::Truncate | QIODevice::Text))
     {
@@ -193,6 +265,17 @@ void Terminal::runFile(const QString &filePath)
     // for Terminal the first time you run this.
 #endif
 
-    QProcess::startDetached(fullCommand, arguments);
+    // startDetached()'s return value was previously discarded -- if
+    // launching fullCommand itself fails (not found, no permission, etc.),
+    // that failed completely silently: no window, no message, nothing to
+    // even suggest Run was clicked at all. Surfaced now so a launch failure
+    // is at least visible somewhere, even without a detailed reason attached
+    // (startDetached() doesn't provide one).
+    bool started = QProcess::startDetached(fullCommand, arguments);
+    if (!started)
+    {
+        mainWindow -> statusBar() -> showMessage(
+            "Couldn't launch \"" + fullCommand + "\" to run this file.", 6000);
+    }
 }
 
