@@ -92,7 +92,23 @@ void Terminal::runFile(const QString &filePath)
     // keeps the window open once the chained command finishes, whether it
     // succeeded or not, so compile errors and program output both stay
     // visible instead of the window vanishing immediately.
-    QString nativePath = QDir::toNativeSeparators(path);
+    //
+    // `path` (shared with the macOS branch above) always ends in a trailing
+    // separator -- see the chop() near the top of this function. On macOS
+    // that's a harmless trailing "/", but toNativeSeparators() turns it into
+    // "\", and a path ending "...\" immediately followed by the closing '"'
+    // below is a classic Windows command-line trap: CreateProcess's argument
+    // escaping (which QProcess::startDetached goes through to launch
+    // cmd.exe) reads a trailing "\"" as an *escaped literal quote*, not
+    // "close the quoted string" -- so the quote never actually closes, and
+    // everything after it (the rest of the chained command) gets swallowed
+    // into what `cd` sees as one garbage path argument. Trimmed here before
+    // quoting so the closing quote is never preceded by a backslash.
+    QString trimmedPath = path;
+    while (trimmedPath.endsWith('/') || trimmedPath.endsWith('\\'))
+        trimmedPath.chop(1);
+
+    QString nativePath = QDir::toNativeSeparators(trimmedPath);
     QString winCmd = QString("cd /d \"%1\" && \"%2\" \"%3\" -o \"%4.exe\" && \"%4.exe\"")
                           .arg(nativePath, compiler, name, outputName);
 
