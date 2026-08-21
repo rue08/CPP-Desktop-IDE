@@ -27,7 +27,7 @@ Cloud backup has made personal files effortless to access and sync across machin
 
 ## Getting Started
 
-Download the latest build from the [Releases page](https://github.com/rue08/CPP-Desktop-IDE/releases) — both macOS and Windows builds are self-contained, no separate compiler or Qt install needed.
+Download the latest build from the [Releases page](https://github.com/rue08/VaultWright/releases) — both macOS and Windows builds are self-contained, no separate compiler or Qt install needed.
 
 **macOS**
 1. Open the `.dmg` and drag `VaultWright.app` out to Applications (or anywhere else) — don't run it from inside the mounted image.
