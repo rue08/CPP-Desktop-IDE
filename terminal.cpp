@@ -88,32 +88,53 @@ void Terminal::runFile(const QString &filePath)
         return;
     }
 
-    // Launch a new console window running cmd.exe. /k (rather than /c)
-    // keeps the window open once the chained command finishes, whether it
-    // succeeded or not, so compile errors and program output both stay
-    // visible instead of the window vanishing immediately.
-    //
     // `path` (shared with the macOS branch above) always ends in a trailing
     // separator -- see the chop() near the top of this function. On macOS
-    // that's a harmless trailing "/", but toNativeSeparators() turns it into
-    // "\", and a path ending "...\" immediately followed by the closing '"'
-    // below is a classic Windows command-line trap: CreateProcess's argument
-    // escaping (which QProcess::startDetached goes through to launch
-    // cmd.exe) reads a trailing "\"" as an *escaped literal quote*, not
-    // "close the quoted string" -- so the quote never actually closes, and
-    // everything after it (the rest of the chained command) gets swallowed
-    // into what `cd` sees as one garbage path argument. Trimmed here before
-    // quoting so the closing quote is never preceded by a backslash.
+    // that's a harmless trailing "/", but toNativeSeparators() would turn it
+    // into "\" here, which is its own separate Windows quoting hazard.
+    // Trimmed regardless, below, before it's ever quoted.
     QString trimmedPath = path;
     while (trimmedPath.endsWith('/') || trimmedPath.endsWith('\\'))
         trimmedPath.chop(1);
 
     QString nativePath = QDir::toNativeSeparators(trimmedPath);
-    QString winCmd = QString("cd /d \"%1\" && \"%2\" \"%3\" -o \"%4.exe\" && \"%4.exe\"")
-                          .arg(nativePath, compiler, name, outputName);
 
+    // Written to a .bat file rather than passed inline as a `cmd.exe /k
+    // "<command>"` argument. cmd.exe's /K switch does its own ad hoc
+    // parsing of whatever follows it (see `cmd /?`), entirely separate from
+    // the normal CreateProcess argument-escaping convention QProcess uses to
+    // build that argument in the first place -- the two disagree on what a
+    // `\"` means. `cmd /?`'s own documented rule only cleanly preserves
+    // quoting when the command tail contains *exactly two* quote characters;
+    // compiling and then running needs four quoted paths (compiler, source,
+    // output -- twice), so cmd.exe falls back to a much cruder "strip the
+    // first quote, strip the last quote" heuristic that mangles everything
+    // in between. A .bat file sidesteps this completely: its contents are
+    // parsed by cmd's ordinary line parser -- the same rules as typing it
+    // directly at a prompt -- with none of /K's special-cased quirks. Same
+    // reasoning as the trailer script on the macOS branch below, just
+    // covering the whole command here instead of one trailing step.
+    QString batContents = QString("cd /d \"%1\"\n\"%2\" \"%3\" -o \"%4.exe\" && \"%4.exe\"\n")
+                               .arg(nativePath, compiler, name, outputName);
+
+    QString batPath = QDir::tempPath() + QString("/ide_run_%1.bat").arg(QCoreApplication::applicationPid());
+    QFile batFile(batPath);
+    if (!batFile.open(QIODevice::WriteOnly | QIODevice::Truncate | QIODevice::Text))
+    {
+        mainWindow -> statusBar() -> showMessage("Couldn't write the run script to " + batPath, 4000);
+        return;
+    }
+    batFile.write(batContents.toUtf8());
+    batFile.close();
+
+    // Launch a new console window running cmd.exe. /k (rather than /c)
+    // keeps the window open once the batch file finishes, whether it
+    // succeeded or not, so compile errors and program output both stay
+    // visible instead of the window vanishing immediately. The argument here
+    // is just one plain path -- no embedded quotes for /K's parsing to trip
+    // over, unlike the inline command string this replaced.
     fullCommand = "cmd.exe";
-    arguments << "/k" << winCmd;
+    arguments << "/k" << QDir::toNativeSeparators(batPath);
 #else
     // --- macOS ---
     if (QStandardPaths::findExecutable("g++").isEmpty())
