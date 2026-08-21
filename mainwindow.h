@@ -9,7 +9,6 @@
 #include <QIcon>
 #include <QVariant>
 #include <QFileDialog>
-#include <QStackedWidget>
 #include <QSet>
 #include "storage.h"
 #include "loginwindow.h"
@@ -260,8 +259,6 @@ private:
     QString pendingBackendSuccessMessage;
 
     Ui::MainWindow *ui;
-    QStackedWidget *localFilesStack;
-    QStackedWidget *cloudFilesStack;
     QTreeWidget *localFiles;
     QTreeWidget *cloudFiles;
     QSplitter *splitter;
@@ -282,8 +279,6 @@ private:
     // startup, on logout, on sign-in, on session expiry) -- deleting the
     // account makes no sense whenever logging out wouldn't either.
     QAction *deleteAccountAction = nullptr;
-    QLabel* localFilesArea;
-    QLabel* cloudFilesArea;
 
     // Mirrors Theme::isDark() -- kept as a member (rather than re-querying
     // Theme::isDark() every time) so iconForFileName()/iconForExecutable()

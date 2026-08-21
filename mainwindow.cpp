@@ -8,7 +8,6 @@
 #include <QPushButton>
 #include <QDir>
 #include <QDirIterator>
-#include <QStackedWidget>
 #include <QDialog>
 #include <QVBoxLayout>
 #include <QLabel>
@@ -49,14 +48,35 @@ MainWindow::MainWindow(QWidget *parent)
 
     theVault = new QSplitter(Qt::Vertical, splitter);
 
-    localFilesStack = new QStackedWidget(theVault);
-    cloudFilesStack = new QStackedWidget(theVault);
+    // Each pane is a persistent "Local Files"/"Cloud Files" header pinned
+    // above its tree -- unlike the old design, where the pane's only label
+    // was a low-opacity empty-state placeholder that stood in for a heading
+    // when there was nothing to show and vanished the moment real content
+    // loaded. The tree itself (empty or not) is always visible now, so
+    // there's no separate empty-state widget to switch to/from.
+    QWidget *localFilesPane = new QWidget(theVault);
+    QVBoxLayout *localFilesPaneLayout = new QVBoxLayout(localFilesPane);
+    localFilesPaneLayout -> setContentsMargins(0, 0, 0, 0);
+    localFilesPaneLayout -> setSpacing(0);
+
+    QLabel *localFilesHeader = new QLabel("Local Files");
+    localFilesHeader -> setStyleSheet("font-weight: bold; padding: 4px 6px;");
+    localFilesPaneLayout -> addWidget(localFilesHeader);
 
     localFiles = new QTreeWidget;
-    localFilesStack->addWidget(localFiles);
+    localFilesPaneLayout -> addWidget(localFiles);
+
+    QWidget *cloudFilesPane = new QWidget(theVault);
+    QVBoxLayout *cloudFilesPaneLayout = new QVBoxLayout(cloudFilesPane);
+    cloudFilesPaneLayout -> setContentsMargins(0, 0, 0, 0);
+    cloudFilesPaneLayout -> setSpacing(0);
+
+    QLabel *cloudFilesHeader = new QLabel("Cloud Files");
+    cloudFilesHeader -> setStyleSheet("font-weight: bold; padding: 4px 6px;");
+    cloudFilesPaneLayout -> addWidget(cloudFilesHeader);
 
     cloudFiles = new QTreeWidget;
-    cloudFilesStack->addWidget(cloudFiles);
+    cloudFilesPaneLayout -> addWidget(cloudFiles);
 
     theWorkspace = new QTabWidget(splitter);
 
@@ -69,8 +89,8 @@ MainWindow::MainWindow(QWidget *parent)
     // neither splitter renders its platform's native grip/shading anymore.
     // Pinning the width here too keeps both consistent across OSes rather
     // than just the color.
-    splitter -> setHandleWidth(7);
-    theVault -> setHandleWidth(7);
+    splitter -> setHandleWidth(4);
+    theVault -> setHandleWidth(4);
 
     QWidget *spacer = new QWidget();
     spacer -> setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Expanding);
@@ -165,23 +185,6 @@ MainWindow::MainWindow(QWidget *parent)
     cloudFiles -> viewport() -> installEventFilter(this);
 
 
-    localFilesArea = new QLabel("Local Files' Area");
-    localFilesStack -> addWidget(localFilesArea);
-    localFilesArea->setAlignment(Qt::AlignCenter);
-    localFilesArea->setWordWrap(true);
-    localFilesArea->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
-
-    cloudFilesArea = new QLabel("Cloud Files' Area");
-    cloudFilesStack -> addWidget(cloudFilesArea);
-    cloudFilesArea->setAlignment(Qt::AlignCenter);
-    cloudFilesArea->setWordWrap(true);
-    cloudFilesArea->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
-    // Both labels' muted text color is theme-dependent -- set by
-    // applyTheme() below, same reasoning as the hover style above.
-
-    localFilesStack -> setCurrentWidget(localFilesArea);
-    cloudFilesStack -> setCurrentWidget(cloudFilesArea);
-
     connect(localFiles, &QTreeWidget::itemDoubleClicked, this, &MainWindow::localFilesItemClicked);
     connect(cloudFiles, &QTreeWidget::itemDoubleClicked, this, &MainWindow::cloudFilesItemClicked);
     connect(storage, &Storage::cloudFilesCleared, cloudFiles, &QTreeWidget::clear);
@@ -224,11 +227,21 @@ MainWindow::MainWindow(QWidget *parent)
     // Remembering the previous sizes of each layout
     splitter -> restoreState(settings.value("splitterDimensions").toByteArray());
 
+    // restoreState() above doesn't just restore pane sizes -- it also
+    // restores whatever handle width was in effect when that state was
+    // saved (confirmed: saveState()/restoreState() round-trips
+    // handleWidth() same as sizes). Any state saved before this file
+    // started pinning it to 4px would silently put it back to the
+    // platform's old default (7px on macOS) the instant this line runs, so
+    // it's re-asserted here, after restoreState(), to actually win.
+    // theVault has no restoreState() call of its own, so it isn't affected.
+    splitter -> setHandleWidth(4);
+
     // Seeds icons/stylesheets for the initial paint -- deliberately last in
-    // the constructor, since applyTheme() touches localFilesArea/
-    // cloudFilesArea (among other things constructed above), and calling it
-    // any earlier than everything it touches exists is a use of
-    // uninitialized member pointers. Can't rely solely on
+    // the constructor, since applyTheme() touches splitter/theVault and the
+    // file trees (among other things constructed above), and calling it any
+    // earlier than everything it touches exists is a use of uninitialized
+    // member pointers. Can't rely solely on
     // onColorSchemeChanged() for this either, since Theme::setMode() near
     // the top only emits colorSchemeChanged when the effective scheme
     // actually changes.
@@ -504,8 +517,6 @@ void MainWindow::on_actionOpen_Folder_triggered()
     if (folderPath.isEmpty())
         return;
 
-    localFilesStack -> setCurrentWidget(localFiles);
-
     dir = QDir(folderPath);
 
     QTreeWidgetItem* root = new QTreeWidgetItem(localFiles);
@@ -732,7 +743,6 @@ void MainWindow::on_actionLogout_triggered()
     deleteAccountAction -> setEnabled(false);
 
     cloudFiles -> clear();
-    cloudFilesStack -> setCurrentWidget(cloudFilesArea);
 
     // Deliberately not reopening the login dialog (unlike onSessionExpired())
     // -- this was a deliberate action, not an error state that needs fixing
@@ -796,7 +806,6 @@ void MainWindow::onFirebaseAccountDeleted()
     deleteAccountAction -> setEnabled(false);
 
     cloudFiles -> clear();
-    cloudFilesStack -> setCurrentWidget(cloudFilesArea);
 
     ui -> statusbar -> showMessage("Account deleted.", 3000);
 }
@@ -818,7 +827,6 @@ void MainWindow::onFirebaseAccountDeleteFailed(const QString &errorString)
     deleteAccountAction -> setEnabled(false);
 
     cloudFiles -> clear();
-    cloudFilesStack -> setCurrentWidget(cloudFilesArea);
 
     ui -> statusbar -> showMessage("Account data deleted.", 3000);
     QMessageBox::warning(this, "Delete Account",
@@ -1317,8 +1325,6 @@ void MainWindow::onDeleteBatchFinished(int succeededCount)
 
 void MainWindow::onSetCloudFiles(const QString &fileName, const QString &cloudFilePath)
 {
-    cloudFilesStack -> setCurrentWidget(cloudFiles);
-
     QTreeWidgetItem* child = new QTreeWidgetItem(cloudFiles);
     child -> setText(0, fileName);
     child -> setIcon(0, iconForFileName(fileName));
@@ -1435,7 +1441,6 @@ void MainWindow::onSessionExpired()
     ui -> actionDelete_File_from_Cloud -> setEnabled(false);
     deleteAccountAction -> setEnabled(false);
     cloudFiles -> clear();
-    cloudFilesStack -> setCurrentWidget(cloudFilesArea);
 
     ui -> statusbar -> showMessage("Your session has expired. Please log in again.", 5000);
 
@@ -1487,9 +1492,6 @@ void MainWindow::on_actionClose_Folder_triggered()
         if (ls[i] -> data(0, Qt::UserRole).toString() == "")
             delete ls[i];
     }
-
-    if (localFiles -> topLevelItemCount() == 0)
-        localFilesStack -> setCurrentWidget(localFilesArea);
 }
 
 
@@ -1576,10 +1578,6 @@ void MainWindow::applyTheme(bool isDark)
           "QTreeWidget::item:selected { background: #D7D7D9; color: palette(text); }";
     localFiles -> setStyleSheet(fileTreeHoverStyle);
     cloudFiles -> setStyleSheet(fileTreeHoverStyle);
-
-    QString placeholderStyle = QString("color: rgba(%1,%1,%1,140);").arg(isDark ? 255 : 0);
-    localFilesArea -> setStyleSheet(placeholderStyle);
-    cloudFilesArea -> setStyleSheet(placeholderStyle);
 
     // #000000 in light mode, #FFFFFF in dark -- same mirrored-hex pattern as
     // placeholderStyle just above. Any stylesheet on QSplitter::handle drops
