@@ -16,6 +16,7 @@
 #include <QGuiApplication>
 #include <QStyleHints>
 #include <QActionGroup>
+#include <QAbstractButton>
 
 
 MainWindow::MainWindow(QWidget *parent)
@@ -183,6 +184,15 @@ MainWindow::MainWindow(QWidget *parent)
     cloudFiles -> viewport() -> setMouseTracking(true);
     localFiles -> viewport() -> installEventFilter(this);
     cloudFiles -> viewport() -> installEventFilter(this);
+
+    // Installed on the whole application, not one specific widget, so this
+    // reaches every button anywhere -- toolbar actions (QToolButton, once
+    // ui->toolBar renders them), Profile/View menu items, dialog buttons in
+    // Settings/LoginWindow, even QMessageBox's own standard buttons -- with
+    // no need to touch each dialog's own construction code individually, and
+    // automatically covering anything added later too. See eventFilter()
+    // for the actual QAbstractButton handling.
+    qApp -> installEventFilter(this);
 
 
     connect(localFiles, &QTreeWidget::itemDoubleClicked, this, &MainWindow::localFilesItemClicked);
@@ -1126,6 +1136,23 @@ bool MainWindow::eventFilter(QObject *watched, QEvent *event)
         }
         else if (event -> type() == QEvent::Leave)
             tree -> viewport() -> setCursor(Qt::ArrowCursor);
+    }
+
+    // Every button in the app (toolbar actions, dialog buttons, QMessageBox's
+    // own Yes/Cancel/etc.) gets a hand cursor while enabled, and the plain
+    // arrow while disabled -- installed on qApp (see the constructor) rather
+    // than each button individually, so this reaches every QPushButton/
+    // QToolButton anywhere, including ones inside dialogs that don't exist
+    // yet at startup. QEvent::Show catches a button's cursor the first time
+    // it becomes visible (its enabled state may already be settled by
+    // then -- constructing a button disabled-from-the-start never fires
+    // EnabledChange on its own); QEvent::EnabledChange catches every
+    // setEnabled() call afterward, whichever of the app's many scattered
+    // call sites it comes from.
+    if (event -> type() == QEvent::Show || event -> type() == QEvent::EnabledChange)
+    {
+        if (auto *button = qobject_cast<QAbstractButton*>(watched))
+            button -> setCursor(button -> isEnabled() ? Qt::PointingHandCursor : Qt::ArrowCursor);
     }
 
     return QMainWindow::eventFilter(watched, event);

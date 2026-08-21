@@ -138,7 +138,28 @@ void Terminal::runFile(const QString &filePath)
     // directly at a prompt -- with none of /K's special-cased quirks. Same
     // reasoning as the trailer script on the macOS branch below, just
     // covering the whole command here instead of one trailing step.
-    QString batContents = QString("cd /d \"%1\"\n\"%2\" \"%3\" -o \"%4.exe\" && \"%4.exe\"\n")
+    //
+    // -static is the actual fix for output silently going missing --
+    // confirmed by hand: the bundled MinGW-w64 toolchain (windows/mingw64/,
+    // see windows/README.md) links against runtime DLLs (libstdc++-6.dll,
+    // libgcc_s_seh-1.dll, libwinpthread-1.dll) that live next to g++.exe
+    // itself, not next to wherever the user's source file happens to be --
+    // without -static, the compiled program can fail to actually run
+    // correctly once launched from an arbitrary project folder, with
+    // nothing printed and no visible error either. Statically linking bakes
+    // those runtime pieces into the .exe itself, so it runs correctly
+    // regardless of where it ends up.
+    //
+    // Compile and run back to chained on one line with `&&` -- a separate
+    // `if errorlevel 1 goto :eof` line was tried in between at one point
+    // (on a theory that same-line chaining was itself losing output), but
+    // that turned out to be a false lead: the comparison that pointed at it
+    // had accidentally also swapped which g++ was being used, not just
+    // chained-vs-not on the same one. -static above is the real fix, so
+    // there's no reason to keep the extra line (and its echoed-by-default
+    // noise) around -- `&&` already gives the same "only run if the compile
+    // succeeded" behavior on its own.
+    QString batContents = QString("cd /d \"%1\"\n\"%2\" \"%3\" -o \"%4.exe\" -static && \"%4.exe\"\n")
                                .arg(nativePath, compiler, name, outputName);
 
     QString batPath = QDir::tempPath() + QString("/ide_run_%1.bat").arg(runId);
@@ -263,7 +284,6 @@ void Terminal::runFile(const QString &filePath)
 
     // Note for macOS: You might need to grant your IDE "Automation" permission
     // for Terminal the first time you run this.
-#endif
 
     // startDetached()'s return value was previously discarded -- if
     // launching fullCommand itself fails (not found, no permission, etc.),
@@ -271,11 +291,22 @@ void Terminal::runFile(const QString &filePath)
     // even suggest Run was clicked at all. Surfaced now so a launch failure
     // is at least visible somewhere, even without a detailed reason attached
     // (startDetached() doesn't provide one).
+    //
+    // Windows doesn't reach here at all -- its branch above launches its own
+    // way (setCreateProcessArgumentsModifier() needs a live QProcess, not
+    // the plain static startDetached() this call is) and returns early, so
+    // this tail is macOS-only now, moved inside this #else specifically so
+    // fullCommand/arguments (declared at the top of this branch) stay in
+    // scope for it -- they used to be declared before the #if/#else split,
+    // which compiled fine on macOS but left them undeclared on a Windows
+    // build, since this code sat after the #endif and so was compiled
+    // unconditionally on both platforms even though only macOS ever uses it.
     bool started = QProcess::startDetached(fullCommand, arguments);
     if (!started)
     {
         mainWindow -> statusBar() -> showMessage(
             "Couldn't launch \"" + fullCommand + "\" to run this file.", 6000);
     }
+#endif
 }
 
