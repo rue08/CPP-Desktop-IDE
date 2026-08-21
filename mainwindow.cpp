@@ -62,6 +62,16 @@ MainWindow::MainWindow(QWidget *parent)
 
     theVault -> setMinimumWidth(105);
 
+    // Explicit rather than left to the active QStyle's PM_SplitterWidth --
+    // that defaults to 7px on macOS's native style but would come out
+    // different on Windows/Fusion, and the handle's color is forced by a
+    // stylesheet in applyTheme() below regardless, which already means
+    // neither splitter renders its platform's native grip/shading anymore.
+    // Pinning the width here too keeps both consistent across OSes rather
+    // than just the color.
+    splitter -> setHandleWidth(7);
+    theVault -> setHandleWidth(7);
+
     QWidget *spacer = new QWidget();
     spacer -> setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Expanding);
     ui -> toolBar -> addWidget(spacer);
@@ -1570,6 +1580,16 @@ void MainWindow::applyTheme(bool isDark)
     QString placeholderStyle = QString("color: rgba(%1,%1,%1,140);").arg(isDark ? 255 : 0);
     localFilesArea -> setStyleSheet(placeholderStyle);
     cloudFilesArea -> setStyleSheet(placeholderStyle);
+
+    // #000000 in light mode, #FFFFFF in dark -- same mirrored-hex pattern as
+    // placeholderStyle just above. Any stylesheet on QSplitter::handle drops
+    // the active QStyle's native grip/shading in favor of plain CSS box-model
+    // painting, which is why this is a flat fill rather than palette(...):
+    // there's no more native rendering underneath for a palette role to tint.
+    QString splitterHandleStyle = QString("QSplitter::handle { background-color: %1; }")
+        .arg(isDark ? "#FFFFFF" : "#000000");
+    splitter -> setStyleSheet(splitterHandleStyle);
+    theVault -> setStyleSheet(splitterHandleStyle);
 
     refreshTreeIcons();
 
