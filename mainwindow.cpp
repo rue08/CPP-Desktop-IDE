@@ -74,6 +74,8 @@ MainWindow::MainWindow(QWidget *parent)
     ui -> actionLogout -> setEnabled(false);
     ui -> actionUpload_File_to_Cloud -> setEnabled(false);
     ui -> actionDelete_File_from_Cloud -> setEnabled(false);
+    // deleteAccountAction doesn't exist yet at this point in the constructor
+    // -- disabled once it's created just below instead.
 
 
     // View > Theme -- System/Light/Dark, mutually exclusive. Built
@@ -86,6 +88,21 @@ MainWindow::MainWindow(QWidget *parent)
     QAction *systemThemeAction = themeMenu -> addAction("System");
     QAction *lightThemeAction = themeMenu -> addAction("Light");
     QAction *darkThemeAction = themeMenu -> addAction("Dark");
+
+    QMenu *profileMenu = ui -> menubar -> addMenu("Profile");
+
+    profileMenu -> addAction(ui -> actionLogin);
+    profileMenu -> addAction(ui -> actionLogout);
+    deleteAccountAction = profileMenu -> addAction("Delete Account");
+    deleteAccountAction -> setIcon(QIcon(":/icons/Icons/delete_24dp_FF0000_FILL0_wght400_GRAD0_opsz24.svg"));
+
+    // Only meaningful while signed in -- kept in lockstep with
+    // ui->actionLogout's enabled state everywhere that's toggled (below, and
+    // in on_actionLogout_triggered()/onEnableActionUpload()/
+    // onSessionExpired()), since deleting the account makes no sense
+    // whenever logging out wouldn't either.
+    deleteAccountAction -> setEnabled(false);
+    connect(deleteAccountAction, &QAction::triggered, this, &MainWindow::onDeleteAccountTriggered);
 
     QActionGroup *themeGroup = new QActionGroup(this);
     for (QAction *action : {systemThemeAction, lightThemeAction, darkThemeAction})
@@ -171,9 +188,13 @@ MainWindow::MainWindow(QWidget *parent)
     connect(storage, &Storage::tokenRefreshRequired, this, &MainWindow::onTokenRefreshRequired);
     connect(storage, &Storage::backendLoginSucceeded, this, &MainWindow::onBackendLoginSucceeded);
     connect(storage, &Storage::backendLoginFailed, this, &MainWindow::onBackendLoginFailed);
+    connect(storage, &Storage::accountDeleteSucceeded, this, &MainWindow::onBackendAccountDeleted);
+    connect(storage, &Storage::accountDeleteFailed, this, &MainWindow::onBackendAccountDeleteFailed);
     connect(loginWindow, &LoginWindow::enableActionUpload, this, &MainWindow::onEnableActionUpload);
     connect(loginWindow, &LoginWindow::idTokenRefreshed, this, &MainWindow::onIdTokenRefreshed);
     connect(loginWindow, &LoginWindow::sessionExpired, this, &MainWindow::onSessionExpired);
+    connect(loginWindow, &LoginWindow::accountDeleted, this, &MainWindow::onFirebaseAccountDeleted);
+    connect(loginWindow, &LoginWindow::accountDeletionFailed, this, &MainWindow::onFirebaseAccountDeleteFailed);
 
     // Silently signs back in from a previous run, if a session was saved --
     // a no-op otherwise (nothing saved). Deliberately after every connect()
@@ -698,6 +719,7 @@ void MainWindow::on_actionLogout_triggered()
     ui -> actionLogout -> setEnabled(false);
     ui -> actionUpload_File_to_Cloud -> setEnabled(false);
     ui -> actionDelete_File_from_Cloud -> setEnabled(false);
+    deleteAccountAction -> setEnabled(false);
 
     cloudFiles -> clear();
     cloudFilesStack -> setCurrentWidget(cloudFilesArea);
@@ -706,6 +728,92 @@ void MainWindow::on_actionLogout_triggered()
     // -- this was a deliberate action, not an error state that needs fixing
     // before the app is usable again.
     ui -> statusbar -> showMessage("Logged out.", 3000);
+}
+
+
+void MainWindow::onDeleteAccountTriggered()
+{
+    QMessageBox::StandardButton reply = QMessageBox::warning(this, "Delete Account",
+        "This permanently deletes your account and every file you have stored in the cloud. "
+        "This cannot be undone.\n\nAre you sure you want to continue?",
+        QMessageBox::Yes | QMessageBox::Cancel, QMessageBox::Cancel);
+
+    if (reply != QMessageBox::Yes)
+        return;
+
+    // Disabled for the duration of the request so a second click can't fire
+    // a second deletion while the first is still in flight -- re-enabled by
+    // onBackendAccountDeleteFailed() if it doesn't pan out, left disabled by
+    // every other outcome since the account (or at least its data) is gone
+    // by then regardless.
+    deleteAccountAction -> setEnabled(false);
+    ui -> statusbar -> showMessage("Deleting account...", 0);
+    storage -> deleteAccount();
+}
+
+
+void MainWindow::onBackendAccountDeleted()
+{
+    // The users row and every cloud file it owned are gone. Last step is
+    // deleting the Firebase identity itself -- see onFirebaseAccountDeleted()/
+    // onFirebaseAccountDeleteFailed() for how the local session gets torn
+    // down once that settles.
+    loginWindow -> deleteAccount();
+}
+
+
+void MainWindow::onBackendAccountDeleteFailed(const QString &errorString)
+{
+    // Nothing was actually deleted -- safe to just report and let the user
+    // retry (same reasoning as onBackendLoginFailed()/onDeleteFailed()).
+    deleteAccountAction -> setEnabled(true);
+    QMessageBox::warning(this, "Delete Account Failed", errorString);
+}
+
+
+void MainWindow::onFirebaseAccountDeleted()
+{
+    // Same UI teardown as on_actionLogout_triggered(), minus
+    // loginWindow->logOut() -- LoginWindow already tore down its own session
+    // as part of deleteAccount() succeeding (see its comment).
+    storage -> setIdToken(QString());
+
+    ui -> actionUpload -> setEnabled(false);
+    ui -> actionRetry -> setEnabled(false);
+    ui -> actionLogout -> setEnabled(false);
+    ui -> actionUpload_File_to_Cloud -> setEnabled(false);
+    ui -> actionDelete_File_from_Cloud -> setEnabled(false);
+    deleteAccountAction -> setEnabled(false);
+
+    cloudFiles -> clear();
+    cloudFilesStack -> setCurrentWidget(cloudFilesArea);
+
+    ui -> statusbar -> showMessage("Account deleted.", 3000);
+}
+
+
+void MainWindow::onFirebaseAccountDeleteFailed(const QString &errorString)
+{
+    // The account's data is already gone (this only runs after
+    // onBackendAccountDeleted()) -- just the Firebase identity itself
+    // survived. Still tear down the local session, same as the success path
+    // above, since there's nothing left worth staying signed in for.
+    storage -> setIdToken(QString());
+
+    ui -> actionUpload -> setEnabled(false);
+    ui -> actionRetry -> setEnabled(false);
+    ui -> actionLogout -> setEnabled(false);
+    ui -> actionUpload_File_to_Cloud -> setEnabled(false);
+    ui -> actionDelete_File_from_Cloud -> setEnabled(false);
+    deleteAccountAction -> setEnabled(false);
+
+    cloudFiles -> clear();
+    cloudFilesStack -> setCurrentWidget(cloudFilesArea);
+
+    ui -> statusbar -> showMessage("Account data deleted.", 3000);
+    QMessageBox::warning(this, "Delete Account",
+        "Your account and cloud files were deleted, but your Google sign-in couldn't be revoked:\n\n"
+        + errorString + "\n\nYou've been signed out either way.");
 }
 
 void MainWindow::onEnableActionUpload(bool flag, const QString& idToken, const QString& uid)
@@ -717,6 +825,7 @@ void MainWindow::onEnableActionUpload(bool flag, const QString& idToken, const Q
     ui -> actionLogout -> setEnabled(flag);
     ui -> actionUpload_File_to_Cloud -> setEnabled(flag);
     ui -> actionDelete_File_from_Cloud -> setEnabled(flag);
+    deleteAccountAction -> setEnabled(flag);
     storage -> setIdToken(idToken);
 
     if (flag)
@@ -1314,6 +1423,7 @@ void MainWindow::onSessionExpired()
     ui -> actionLogout -> setEnabled(false);
     ui -> actionUpload_File_to_Cloud -> setEnabled(false);
     ui -> actionDelete_File_from_Cloud -> setEnabled(false);
+    deleteAccountAction -> setEnabled(false);
     cloudFiles -> clear();
     cloudFilesStack -> setCurrentWidget(cloudFilesArea);
 

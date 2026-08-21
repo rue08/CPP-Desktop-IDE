@@ -296,6 +296,47 @@ void Authenticator::logOut()
 }
 
 
+void Authenticator::deleteAccount(const QString &idToken)
+{
+    QString endpoint = "https://identitytoolkit.googleapis.com/v1/accounts:delete?key=";
+    endpoint += FIREBASE_API_KEY;
+
+    QVariantMap payload;
+    payload["idToken"] = idToken;
+
+    QNetworkRequest request{QUrl(endpoint)};
+    request.setHeader(QNetworkRequest::ContentTypeHeader, QString("application/json"));
+
+    QNetworkReply *reply = networkAccessManager->post(request, QJsonDocument::fromVariant(payload).toJson());
+    connect(reply, &QNetworkReply::finished, this, &Authenticator::onDeleteAccountFinished);
+}
+
+
+void Authenticator::onDeleteAccountFinished()
+{
+    QNetworkReply *reply = qobject_cast<QNetworkReply*>(sender());
+    QByteArray response = reply->readAll();
+    reply->deleteLater();
+
+    QJsonDocument jsonDocument = QJsonDocument::fromJson(response);
+    QJsonObject object = jsonDocument.object();
+
+    // Unlike sign-in/refresh, a successful accounts:delete response carries
+    // no token of its own to check for -- just a bare {"kind": "..."} object.
+    // "no error" is the actual success signal here.
+    if (jsonDocument.isObject() && object.contains("error"))
+    {
+        QString message = object.value("error").toObject().value("message").toString();
+        emit accountDeletionFailed(message.isEmpty()
+            ? QStringLiteral("Google sign-in couldn't be reached.")
+            : message);
+        return;
+    }
+
+    emit accountDeleted();
+}
+
+
 void Authenticator::onRefreshFinished()
 {
     QNetworkReply *reply = qobject_cast<QNetworkReply*>(sender());

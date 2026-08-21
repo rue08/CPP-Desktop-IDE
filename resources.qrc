@@ -22,5 +22,6 @@
         <file>Icons/seti_default_24dp_D4D7D6.svg</file>
         <file>Icons/seti_default_24dp_6E7681.svg</file>
         <file>Icons/app-icon.svg</file>
+        <file>Icons/delete_24dp_FF0000_FILL0_wght400_GRAD0_opsz24.svg</file>
     </qresource>
 </RCC>

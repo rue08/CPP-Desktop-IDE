@@ -45,6 +45,14 @@ public:
     // had a chance to sign in).
     bool hasPersistedSession() const;
 
+    // Permanently deletes the Firebase account behind `idToken`, via Identity
+    // Toolkit's accounts:delete. Only ever called as the last step of
+    // "Delete Account", after the backend has already deleted the users row
+    // (and, via ON DELETE CASCADE, every cloud file) -- so by the time this
+    // runs, the account has nothing left to lose even if this step itself
+    // fails. Reports accountDeleted() or accountDeletionFailed().
+    void deleteAccount(const QString &idToken);
+
     // The email persisted alongside the refresh token at the last
     // successful sign-in -- restoreSession() uses this to restore
     // LoginWindow's isLoggedIn/loggedInEmail bookkeeping across a restart,
@@ -112,6 +120,8 @@ private:
     void signInToFirebaseWithGoogleIdToken(const QString &googleIdToken);
     void onFirebaseGoogleSignInFinished();
 
+    void onDeleteAccountFinished();
+
     // Cryptographically random, URL-safe token generator -- used for both
     // pendingState and pendingCodeVerifier (with different lengths).
     static QString randomUrlSafeToken(int numBytes);
@@ -132,6 +142,10 @@ signals:
     // explicitly revoked, or long unused). There's no recovery from this
     // short of signing in again.
     void sessionExpired();
+
+    // Result of deleteAccount() above.
+    void accountDeleted();
+    void accountDeletionFailed(const QString &errorString);
 };
 
 #endif // AUTHENTICATOR_H

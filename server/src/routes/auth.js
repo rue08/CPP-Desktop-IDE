@@ -1,6 +1,7 @@
 const express = require('express');
 const { verifyFirebaseIdToken } = require('../firebaseAuth');
 const { pool } = require('../db');
+const { requireAuth } = require('../middleware/auth');
 
 const router = express.Router();
 
@@ -32,6 +33,20 @@ router.post('/firebase/login', async (req, res, next) => {
     );
 
     res.json(rows[0]);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// DELETE /auth/account -- permanently deletes the caller's users row. `files.user_id` has
+// ON DELETE CASCADE (migrations/001_init.sql), so this also wipes every cloud file they own in
+// the same statement -- no separate file-cleanup pass needed. The client only calls this after
+// confirming with the user; it's the first step of "Delete Account", followed by deleting the
+// Firebase identity itself (see Authenticator::deleteAccount() -- outside this backend's reach).
+router.delete('/account', requireAuth, async (req, res, next) => {
+  try {
+    await pool.query('DELETE FROM users WHERE id = $1', [req.userId]);
+    res.status(204).end();
   } catch (err) {
     next(err);
   }

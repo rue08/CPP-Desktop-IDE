@@ -351,6 +351,47 @@ void Storage::finishPendingDelete()
 }
 
 
+void Storage::deleteAccount()
+{
+    newRequest = buildRequest(QUrl(backendUrl + "/auth/account"));
+    newRequest.setRawHeader("Authorization", ("Bearer " + idToken).toUtf8());
+
+    QNetworkReply* reply = networkAccessManager -> deleteResource(newRequest);
+    connect(reply, &QNetworkReply::finished, this, &Storage::onDeleteAccountFinished);
+}
+
+
+void Storage::onDeleteAccountFinished()
+{
+    QNetworkReply *reply = qobject_cast<QNetworkReply*>(sender());
+    QByteArray response = reply -> readAll();
+
+    if (deferIfAuthError(reply, response, [this](bool refreshed) {
+            if (refreshed)
+                this -> deleteAccount();
+            else
+                emit accountDeleteFailed("Session expired. Please log in again.");
+        }))
+    {
+        reply->deleteLater();
+        return;
+    }
+
+    QString error = extractError(reply, response);
+    if (!error.isEmpty())
+    {
+        emit accountDeleteFailed(error);
+        reply->deleteLater();
+        return;
+    }
+
+    // DELETE /auth/account responds 204 No Content on success -- nothing to
+    // parse out of `response`.
+    emit accountDeleteSucceeded();
+    reply->deleteLater();
+}
+
+
 void Storage::listFiles()
 {
     emit cloudFilesCleared();

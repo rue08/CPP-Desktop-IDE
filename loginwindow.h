@@ -29,6 +29,16 @@ public:
     // login dialog -- logging out is a deliberate action, not an error state.
     void logOut();
 
+    // Deletes the Firebase identity behind the current session (via
+    // Authenticator::deleteAccount()), then tears down the local session
+    // exactly like logOut() -- called only as the last step of "Delete
+    // Account", after MainWindow has already had the backend delete the
+    // users row/cloud files. Reports accountDeleted() or
+    // accountDeletionFailed(); either way the local session is gone by the
+    // time one of those fires, since there's nothing left worth keeping it
+    // alive for regardless of whether this last step itself succeeded.
+    void deleteAccount();
+
     // Attempts to silently restore a session saved from a previous run --
     // call once, right after construction. No-op if Authenticator has
     // nothing persisted (first launch, or after an explicit logout). If
@@ -43,11 +53,20 @@ private slots:
     void onLoginFailed();
     void onTokenRefreshed(const QString &idToken);
     void onSessionExpired();
+    void onAccountDeleted();
+    void onAccountDeletionFailed(const QString &errorString);
 
 private:
     MainWindow *mainWindow;
     Ui::LoginWindow *ui;
     Authenticator *auth;
+
+    // The idToken from the most recent successful sign-in or refresh --
+    // mirrors what's handed to Storage via enableActionUpload()/
+    // idTokenRefreshed(), kept here too since deleteAccount() needs to hand
+    // it to Authenticator directly rather than through MainWindow/Storage,
+    // which have no reason to know about Firebase's accounts:delete at all.
+    QString currentIdToken;
 
     // Tracks the in-memory session -- reset in onSessionExpired(), set on a
     // successful sign-in. Not persisted: closing and reopening the app still
@@ -70,6 +89,11 @@ signals:
     void enableActionUpload(bool flag, const QString &idToken, const QString &uid);
     void idTokenRefreshed(const QString &idToken);
     void sessionExpired();
+
+    // Result of deleteAccount() above -- the local session is already torn
+    // down by the time either of these fires, see deleteAccount()'s comment.
+    void accountDeleted();
+    void accountDeletionFailed(const QString &errorString);
 };
 
 #endif // LOGINWINDOW_H

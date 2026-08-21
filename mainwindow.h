@@ -22,6 +22,8 @@ class MainWindow;
 }
 QT_END_NAMESPACE
 
+class QAction;
+
 class MainWindow : public QMainWindow
 {
     Q_OBJECT
@@ -117,6 +119,28 @@ private slots:
     void onBackendLoginSucceeded();
     void onBackendLoginFailed(const QString &errorString);
     void on_actionSettings_triggered();
+
+    // Profile > Delete Account -- confirms with the user, then starts the
+    // deletion chain via storage->deleteAccount(). deleteAccountAction is
+    // manually connected to this (not .ui-declared, same reasoning as the
+    // rest of the Profile/View menus -- see mainwindow.cpp constructor), so
+    // it isn't auto-wired by name the way on_actionX_triggered() slots are.
+    void onDeleteAccountTriggered();
+
+    // Storage::deleteAccount() has settled -- the backend row and every
+    // cloud file it owned are gone either way this splits.
+    // Succeeded: still need to delete the Firebase identity itself, via
+    // LoginWindow::deleteAccount() -- see onFirebaseAccountDeleted().
+    void onBackendAccountDeleted();
+    // Failed: nothing was actually deleted -- safe to just report and let
+    // the user retry.
+    void onBackendAccountDeleteFailed(const QString &errorString);
+
+    // LoginWindow::deleteAccount() has settled -- the local session is
+    // already torn down by the time either of these fires (see its
+    // comment), so both just need to reflect that in the UI.
+    void onFirebaseAccountDeleted();
+    void onFirebaseAccountDeleteFailed(const QString &errorString);
 
     void on_actionToggle_Comment_triggered();
 
@@ -249,6 +273,15 @@ private:
     QFileInfo info;
     Storage *storage;
     LoginWindow *loginWindow;
+
+    // Profile > Delete Account -- not ui-declared (see the View/Profile menu
+    // comment in the constructor), so it's kept as a member rather than a
+    // constructor-local the way loginAction/logoutAction are, since its
+    // enabled state has to be kept in lockstep with ui->actionLogout's at
+    // every one of the several places that toggles it (signed out at
+    // startup, on logout, on sign-in, on session expiry) -- deleting the
+    // account makes no sense whenever logging out wouldn't either.
+    QAction *deleteAccountAction = nullptr;
     QLabel* localFilesArea;
     QLabel* cloudFilesArea;
 

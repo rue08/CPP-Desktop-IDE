@@ -58,6 +58,15 @@ public:
     // the id.
     void deleteFile(const QString &fileId, const QString &fileName);
 
+    // Permanently deletes the caller's account on the backend -- the users
+    // row plus, via ON DELETE CASCADE (migrations/001_init.sql), every cloud
+    // file they own, in one request. The caller (MainWindow) only invokes
+    // this after confirming with the user, and follows a success with
+    // LoginWindow::deleteAccount() to also delete the Firebase identity --
+    // Storage has no reach into that, it only ever talks to our own backend.
+    // Reports accountDeleteSucceeded() or accountDeleteFailed().
+    void deleteAccount();
+
     // Queues a single file for upload. Safe to call repeatedly in a loop for
     // a multi-file batch: Storage tracks how many uploads are outstanding
     // internally and, once every upload queued since the last time it was
@@ -125,6 +134,8 @@ private:
     void startDelete(const QString &fileId, const QString &fileName);
     void onDeleteFinished(const QString &fileId, const QString &fileName);
 
+    void onDeleteAccountFinished();
+
     void parseResponse(const QByteArray &response);
 
     // Called exactly once per uploadFile() call, on success or failure.
@@ -177,6 +188,10 @@ signals:
 
     // Same semantics as uploadBatchFinished() above, for deleteFile() waves.
     void deleteBatchFinished(int succeededCount);
+
+    // Result of deleteAccount() above.
+    void accountDeleteSucceeded();
+    void accountDeleteFailed(const QString &errorString);
 
     void backendLoginSucceeded();
     void backendLoginFailed(const QString &errorString);
