@@ -1149,7 +1149,17 @@ bool MainWindow::eventFilter(QObject *watched, QEvent *event)
     // EnabledChange on its own); QEvent::EnabledChange catches every
     // setEnabled() call afterward, whichever of the app's many scattered
     // call sites it comes from.
-    if (event -> type() == QEvent::Show || event -> type() == QEvent::EnabledChange)
+    //
+    // QEvent::Enter re-asserts the same cursor right as the pointer actually
+    // enters the button -- on macOS this is a harmless no-op (Show/
+    // EnabledChange already had it right, so Enter just sets the identical
+    // value again), but it's there for Windows: native/Vista-styled
+    // QToolButtons re-resolve their cursor on WM_SETCURSOR as the OS paints
+    // hover, which can silently override a cursor set proactively earlier
+    // instead of at the moment of hover. Re-setting it on Enter forces that
+    // resolution to land on ours.
+    if (event -> type() == QEvent::Show || event -> type() == QEvent::EnabledChange
+        || event -> type() == QEvent::Enter)
     {
         if (auto *button = qobject_cast<QAbstractButton*>(watched))
             button -> setCursor(button -> isEnabled() ? Qt::PointingHandCursor : Qt::ArrowCursor);
